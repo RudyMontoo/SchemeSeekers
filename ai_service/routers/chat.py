@@ -137,7 +137,7 @@ async def chat_stream(req: ChatRequest):
         from ai_service.rag_chain import get_retriever, get_memory, NO_MATCH_RESPONSE
         chain   = get_chain()
         filters = build_filters(req.state, req.sector)
-        memory  = get_memory(req.session_id or "default")
+        history = get_memory(req.session_id or "default")  # InMemoryChatMessageHistory
 
         context_text = get_retriever()(req.message, filters)
 
@@ -147,20 +147,20 @@ async def chat_stream(req: ChatRequest):
                 yield NO_MATCH_RESPONSE
             return StreamingResponse(no_match_gen(), media_type="text/plain")
 
-        history = memory.chat_memory.messages
+        chat_messages = history.messages
 
         async def token_generator():
             full_response = ""
             for chunk in chain.stream({
                 "question":     req.message,
                 "filters":      filters,
-                "chat_history": history,
+                "chat_history": chat_messages,
             }):
                 full_response += chunk
                 yield chunk
             # Save to memory after streaming completes
-            memory.chat_memory.add_user_message(req.message)
-            memory.chat_memory.add_ai_message(full_response)
+            history.add_user_message(req.message)
+            history.add_ai_message(full_response)
 
         return StreamingResponse(token_generator(), media_type="text/plain")
 

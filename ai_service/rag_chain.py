@@ -21,7 +21,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
-from langchain.memory import ConversationBufferMemory
+from langchain_core.chat_history import InMemoryChatMessageHistory
 
 # ── Config ────────────────────────────────────────────────────────────────────
 CHROMA_DIR   = Path(__file__).parent / "chroma_db"
@@ -31,8 +31,8 @@ TOP_K        = 5
 GEMINI_MODEL = "gemini-2.0-flash-lite"
 
 # ── Per-session memory store ──────────────────────────────────────────────────
-# { session_id: ConversationBufferMemory }
-_memory_store: dict[str, ConversationBufferMemory] = {}
+# { session_id: InMemoryChatMessageHistory }
+_memory_store: dict[str, InMemoryChatMessageHistory] = {}
 
 NO_MATCH_RESPONSE = (
     "Maafi kijiye, aapke sawal se related koi yojana abhi hamare database mein nahi mili. "
@@ -99,13 +99,10 @@ def get_chromadb_count() -> int:
 
 
 # ── Memory helpers ────────────────────────────────────────────────────────────
-def get_memory(session_id: str) -> ConversationBufferMemory:
-    """Get or create a memory buffer for the given session."""
+def get_memory(session_id: str) -> InMemoryChatMessageHistory:
+    """Get or create a chat history for the given session."""
     if session_id not in _memory_store:
-        _memory_store[session_id] = ConversationBufferMemory(
-            return_messages=True,
-            memory_key="chat_history",
-        )
+        _memory_store[session_id] = InMemoryChatMessageHistory()
     return _memory_store[session_id]
 
 
@@ -153,26 +150,26 @@ def invoke_with_memory(
     Invoke the RAG chain with conversation memory.
     Saves the exchange to session memory automatically.
     """
-    memory = get_memory(session_id)
-    history = memory.chat_memory.messages
+    history = get_memory(session_id)  # InMemoryChatMessageHistory
+    chat_messages = history.messages  # list of HumanMessage / AIMessage
 
     context_text = get_retriever()(question, filters)
 
     # No-match guard — don't call LLM if nothing found
     if context_text.strip() == "No matching schemes found.":
-        memory.chat_memory.add_user_message(question)
-        memory.chat_memory.add_ai_message(NO_MATCH_RESPONSE)
+        history.add_user_message(question)
+        history.add_ai_message(NO_MATCH_RESPONSE)
         return NO_MATCH_RESPONSE
 
     result = chain.invoke({
         "question": question,
         "filters": filters,
-        "chat_history": history,
+        "chat_history": chat_messages,
     })
 
     # Save to memory
-    memory.chat_memory.add_user_message(question)
-    memory.chat_memory.add_ai_message(result)
+    history.add_user_message(question)
+    history.add_ai_message(result)
 
     return result
 
