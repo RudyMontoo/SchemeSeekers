@@ -1,0 +1,16 @@
+langchain>=0.3
+langchain-google-genai>=2.0
+langchain-community>=0.3
+langchain-core>=0.3
+chromadb>=0.5
+sentence-transformers>=2.2
+fastapi>=0.110
+uvicorn[standard]>=0.28
+pydantic>=2.0
+python-dotenv>=1.0
+requests>=2.31
+beautifulsoup4>=4.12
+lxml>=5.0
+openai-whisper>=20231117
+pypdf>=4.0
+pillow>=10.0

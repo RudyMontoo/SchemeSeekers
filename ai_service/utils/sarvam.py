@@ -1,0 +1,338 @@
+"""
+Sarvam AI Integration — Yojna Setu
+Provides multilingual support using:
+  - Saarika v2 / Saaras v3  : Speech-to-Text (22 Indian languages)
+  - Bulbul v3               : Text-to-Speech (11 Indian languages, 30+ voices)
+  - Mayura                  : Translation (Indian languages ↔ English)
+
+Replaces:
+  - OpenAI Whisper  → Saarika/Saaras (better for Indian accents, code-mixing)
+  - gTTS            → Bulbul v3 (natural Indian voices, not robotic)
+
+API Reference: https://docs.sarvam.ai
+Get API key: https://dashboard.sarvam.ai
+"""
+import os
+import io
+import base64
+import logging
+import requests
+from pathlib import Path
+from typing import Optional
+from dotenv import load_dotenv
+
+_env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(dotenv_path=_env_path, override=True)
+
+logger = logging.getLogger(__name__)
+
+# ── Config ────────────────────────────────────────────────────────────────────
+SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "")
+SARVAM_BASE    = "https://api.sarvam.ai"
+
+# Language codes supported by Sarvam AI
+SARVAM_LANGUAGES = {
+    "hi": "hi-IN",   # Hindi
+    "bn": "bn-IN",   # Bengali
+    "ta": "ta-IN",   # Tamil
+    "te": "te-IN",   # Telugu
+    "kn": "kn-IN",   # Kannada
+    "ml": "ml-IN",   # Malayalam
+    "mr": "mr-IN",   # Marathi
+    "gu": "gu-IN",   # Gujarati
+    "pa": "pa-IN",   # Punjabi
+    "or": "or-IN",   # Odia
+    "en": "en-IN",   # English (Indian accent)
+}
+
+# Mapping: user-detected state → best language code
+STATE_TO_LANGUAGE = {
+    # Hindi belt
+    "Uttar Pradesh":  "hi", "Bihar": "hi", "Madhya Pradesh": "hi",
+    "Rajasthan": "hi", "Uttarakhand": "hi", "Haryana": "hi",
+    "Himachal Pradesh": "hi", "Jharkhand": "hi", "Chhattisgarh": "hi",
+    "Delhi": "hi",
+    # Regional languages
+    "Maharashtra":          "mr",
+    "West Bengal":          "bn",
+    "Tamil Nadu":           "ta",
+    "Andhra Pradesh":       "te",
+    "Telangana":            "te",
+    "Karnataka":            "kn",
+    "Kerala":               "ml",
+    "Gujarat":              "gu",
+    "Punjab":               "pa",
+    "Odisha":               "or",
+    # Default to Hindi for others
+    "Assam":    "hi", "Tripura": "hi", "Meghalaya": "hi",
+    "Manipur":  "hi", "Nagaland": "hi", "Mizoram": "hi",
+    "Arunachal Pradesh": "hi", "Sikkim": "hi", "J&K": "hi", "Ladakh": "hi",
+    "Goa":      "en",
+}
+
+# Bulbul v3 speaker voices — CONFIRMED VALID for bulbul:v3
+# Full v3 list: aditya, ritu, ashutosh, priya, neha, rahul, pooja, rohan, simran, kavya,
+#               amit, dev, ishita, shreya, ratan, varun, manan, sumit, roopa, kabir,
+#               aayan, shubh, advait, amelia, sophia, anand, tanya, tarun, sunny, mani,
+#               gokul, vijay, shruti, suhani, mohit, kavitha, rehan, soham, rupali
+LANGUAGE_VOICES = {
+    "hi-IN": "ritu",      # Female Hindi — warm, clear (confirmed v3)
+    "bn-IN": "roopa",     # Bengali female
+    "ta-IN": "shruti",    # Tamil female
+    "te-IN": "kavitha",   # Telugu female
+    "kn-IN": "aditya",    # Kannada male
+    "ml-IN": "priya",     # Malayalam female
+    "mr-IN": "neha",      # Marathi female
+    "gu-IN": "ishita",    # Gujarati female
+    "pa-IN": "rohan",     # Punjabi male
+    "or-IN": "ritu",      # Odia — fallback to Hindi female
+    "en-IN": "amelia",    # English Indian female
+}
+
+
+def get_language_for_state(state: Optional[str]) -> str:
+    """Get the best language code for a user's state."""
+    if not state:
+        return "hi"
+    return STATE_TO_LANGUAGE.get(state, "hi")
+
+
+def get_sarvam_lang_code(lang: str) -> str:
+    """Convert short lang code to Sarvam format (e.g. 'hi' → 'hi-IN')."""
+    return SARVAM_LANGUAGES.get(lang, "hi-IN")
+
+
+# ── Speech to Text (Saarika v2) ──────────────────────────────────────────────
+def sarvam_transcribe(
+    audio_bytes: bytes,
+    audio_format: str = "wav",
+    language_code: str = None,     # None = auto-detect
+) -> dict:
+    """
+    Transcribe audio using Sarvam Saarika v2 / Saaras v3.
+
+    Args:
+        audio_bytes: Raw audio bytes
+        audio_format: 'wav', 'mp3', 'ogg', 'webm', 'm4a', etc.
+        language_code: Optional hint e.g. 'hi-IN'. None = auto-detect.
+
+    Returns:
+        {
+          "transcript": str,
+          "language_code": str,   # detected language
+          "transliteration": str, # optional Devanagari/script form
+        }
+    """
+    if not SARVAM_API_KEY:
+        raise ValueError("SARVAM_API_KEY not set in .env")
+
+    url = f"{SARVAM_BASE}/speech-to-text"
+    headers = {"api-subscription-key": SARVAM_API_KEY}
+
+    mime_map = {
+        "wav":  "audio/wav",
+        "mp3":  "audio/mpeg",
+        "m4a":  "audio/x-m4a",
+        "ogg":  "audio/ogg",
+        "webm": "audio/webm",
+        "flac": "audio/flac",
+        "aac":  "audio/aac",
+    }
+    mime = mime_map.get(audio_format.lstrip(".").lower(), "audio/wav")
+
+    files = {"file": (f"audio.{audio_format}", io.BytesIO(audio_bytes), mime)}
+
+    data = {
+        "model": "saarika:v2",
+        "with_timestamps": False,
+        "with_disfluencies": False,
+    }
+    if language_code:
+        data["language_code"] = language_code
+    else:
+        data["language_code"] = "unknown"  # auto-detect
+
+    resp = requests.post(url, headers=headers, files=files, data=data, timeout=30)
+    resp.raise_for_status()
+    result = resp.json()
+
+    return {
+        "transcript": result.get("transcript", ""),
+        "language_code": result.get("language_code", "hi-IN"),
+    }
+
+
+# ── Text to Speech (Bulbul v3) ───────────────────────────────────────────────
+def sarvam_tts(
+    text: str,
+    language_code: str = "hi-IN",
+    speaker: str = None,           # Auto-selected from LANGUAGE_VOICES if None
+    pace: float = 0.95,            # 0.5 (slow) to 2.0 (fast). 0.95 = natural
+    audio_format: str = "mp3",
+) -> bytes:
+    """
+    Convert text to speech using Sarvam Bulbul v3.
+
+    Args:
+        text: Text to speak (can be Hindi, Hinglish, or any supported Indian language)
+        language_code: 'hi-IN', 'ta-IN', 'bn-IN', etc.
+        speaker: Voice name (e.g. 'meera', 'arvind'). Auto-selected if None.
+        pace: Speech speed (0.5 slow → 2.0 fast)
+        audio_format: 'mp3', 'wav', 'opus', etc.
+
+    Returns:
+        Audio bytes (MP3 by default)
+    """
+    if not SARVAM_API_KEY:
+        raise ValueError("SARVAM_API_KEY not set in .env")
+
+    url = f"{SARVAM_BASE}/text-to-speech"
+    headers = {
+        "api-subscription-key": SARVAM_API_KEY,
+        "Content-Type": "application/json",
+    }
+
+    # Auto-select speaker voice for language
+    if not speaker:
+        speaker = LANGUAGE_VOICES.get(language_code, "meera")
+
+    # Clean text for TTS
+    import re
+    text = re.sub(r'\*+', '', text)
+    text = re.sub(r'#{1,6}\s', '', text)
+    text = re.sub(r'₹', 'rupay ', text)
+    text = re.sub(r'%', ' pratishat ', text)
+    text = text.strip()
+
+    payload = {
+        "inputs": [text],
+        "target_language_code": language_code,
+        "speaker": speaker,
+        "pace": pace,
+        "enable_preprocessing": True,   # handles numbers, dates, etc.
+        "model": "bulbul:v3",
+    }
+
+    resp = requests.post(url, headers=headers, json=payload, timeout=30)
+    resp.raise_for_status()
+    result = resp.json()
+
+    # Response is a list of base64-encoded audio
+    audios = result.get("audios", [])
+    if not audios:
+        raise ValueError("No audio returned from Sarvam TTS")
+
+    audio_b64 = audios[0]
+    return base64.b64decode(audio_b64)
+
+
+# ── Translation (Mayura) ────────────────────────────────────────────────────
+def sarvam_translate(
+    text: str,
+    source_language: str = "en-IN",
+    target_language: str = "hi-IN",
+) -> str:
+    """
+    Translate text between Indian languages using Sarvam Mayura.
+
+    Args:
+        text: Text to translate
+        source_language: Source language code ('en-IN', 'hi-IN', etc.)
+        target_language: Target language code
+
+    Returns:
+        Translated text string
+    """
+    if not SARVAM_API_KEY:
+        raise ValueError("SARVAM_API_KEY not set in .env")
+
+    url = f"{SARVAM_BASE}/translate"
+    headers = {
+        "api-subscription-key": SARVAM_API_KEY,
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "input": text,
+        "source_language_code": source_language,
+        "target_language_code": target_language,
+        "speaker_gender": "Female",
+        "mode": "formal",
+        "model": "mayura:v1",
+        "enable_preprocessing": True,
+    }
+
+    resp = requests.post(url, headers=headers, json=payload, timeout=20)
+    resp.raise_for_status()
+    return resp.json().get("translated_text", text)
+
+
+# ── Convenience function: speak agent question in user's language ─────────────
+def speak_for_state(text: str, state: Optional[str]) -> bytes:
+    """
+    Translate (if needed) and speak text in the appropriate language for the state.
+    Falls back to gTTS if Sarvam key not set.
+    """
+    lang = get_language_for_state(state)
+    lang_code = get_sarvam_lang_code(lang)
+
+    if SARVAM_API_KEY:
+        try:
+            # Translate to regional language if not Hindi
+            if lang != "hi" and lang != "en":
+                text = sarvam_translate(text, source_language="hi-IN",
+                                        target_language=lang_code)
+            return sarvam_tts(text, language_code=lang_code)
+        except Exception as e:
+            logger.warning(f"Sarvam TTS failed ({e}), falling back to gTTS")
+
+    # Fallback to gTTS
+    from ai_service.utils.tts import text_to_speech
+    return text_to_speech(text, lang=lang)
+
+
+# ── Self-test ─────────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    key = SARVAM_API_KEY
+    if not key:
+        print("⚠️  SARVAM_API_KEY not set — add to ai_service/.env")
+        print("   Get free key at: https://dashboard.sarvam.ai")
+        print("\n📋 Supported languages by state:")
+        for state, lang in list(STATE_TO_LANGUAGE.items())[:10]:
+            lc = get_sarvam_lang_code(lang)
+            voice = LANGUAGE_VOICES.get(lc, "meera")
+            print(f"  {state:25s} → {lang} ({lc}) | voice: {voice}")
+        exit(0)
+
+    print("🎙️ Testing Sarvam AI Integration\n" + "="*45)
+
+    # Test TTS
+    print("1. Bulbul v3 TTS (Hindi)...")
+    audio = sarvam_tts(
+        "Namaskar! Main Yojna Sathi hun. Aap kaun se state se hain?",
+        language_code="hi-IN"
+    )
+    with open("/tmp/sarvam_hi.mp3", "wb") as f:
+        f.write(audio)
+    print(f"   ✅ Hindi MP3: {len(audio)/1024:.1f}KB → /tmp/sarvam_hi.mp3")
+
+    # Test Tamil TTS
+    print("2. Bulbul v3 TTS (Tamil)...")
+    audio_ta = sarvam_tts(
+        "Namaskar! Yojna Sathi ullirundu ungalukkaga aval irukiren.",
+        language_code="ta-IN"
+    )
+    with open("/tmp/sarvam_ta.mp3", "wb") as f:
+        f.write(audio_ta)
+    print(f"   ✅ Tamil MP3: {len(audio_ta)/1024:.1f}KB → /tmp/sarvam_ta.mp3")
+
+    # Test Translation
+    print("3. Mayura Translation (Hindi → Tamil)...")
+    translated = sarvam_translate(
+        "आपको PM Kisan Samman Nidhi में 6000 रुपये मिलेंगे।",
+        source_language="hi-IN",
+        target_language="ta-IN"
+    )
+    print(f"   ✅ Tamil: {translated}")
+
+    print("\n✅ Sarvam AI integration test PASSED!")

@@ -1,0 +1,59 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# ── Virtual Environments ──────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+.env_folder/
+
+# ── Environment & Secrets (NEVER commit these) ────────────────────────────────
+.env
+.env.local
+.env.production
+*.env
+
+# ── ChromaDB (vector store — large, rebuilt via ingest.py) ───────────────────
+ai_service/chroma_db/
+
+# ── Model Weights (too large for git) ─────────────────────────────────────────
+*.pt
+*.pth
+*.bin
+*.onnx
+*.safetensors
+whisper_models/
+
+# ── IDE / OS ──────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.~lock.*
+
+# ── Logs & Temp ───────────────────────────────────────────────────────────────
+*.log
+*.tmp
+/tmp/
+logs/
+
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── Java / Spring Boot (for teammates) ───────────────────────────────────────
+target/
+*.class
+*.jar
+*.war

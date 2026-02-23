@@ -1,0 +1,231 @@
+"""
+Agent Router — Yojna Sathi Conversational Endpoint
+FastAPI router for the multi-turn interview agent.
+
+Session state is stored in-memory per session_id (for dev).
+In production: use Redis or a DB-backed session store.
+"""
+import uuid
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from typing import Optional
+import logging
+
+from ai_service.agent.yojna_sathi import (
+    UserProfile, get_next_question, parse_answer, score_eligibility
+)
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/agent", tags=["agent"])
+
+# ── In-memory session store {session_id: (UserProfile, current_question_id)} ──
+_sessions: dict[str, dict] = {}
+
+# Number of top schemes to return when interview completes
+TOP_N_SCHEMES = 5
+
+
+# ── Models ─────────────────────────────────────────────────────────────────────
+class AgentStartResponse(BaseModel):
+    session_id: str
+    question: str
+    question_hi: str
+    progress_pct: int
+    hint: str
+
+class AgentAnswerRequest(BaseModel):
+    session_id: str
+    answer: str
+
+class SchemeSuggestion(BaseModel):
+    name: str
+    sector: str
+    state: str
+    benefit: str
+    apply_url: str
+    eligibility_score: int
+
+class AgentResponse(BaseModel):
+    session_id: str
+    done: bool
+    question: Optional[str] = None
+    question_hi: Optional[str] = None
+    progress_pct: int
+    schemes: Optional[list[SchemeSuggestion]] = None
+    profile_summary: Optional[dict] = None
+    message: Optional[str] = None
+
+
+# ── Routes ─────────────────────────────────────────────────────────────────────
+@router.post("/start", response_model=AgentStartResponse)
+async def start_session():
+    """Start a new Yojna Sathi interview session."""
+    session_id = str(uuid.uuid4())
+    profile = UserProfile()
+    _sessions[session_id] = {"profile": profile, "question_idx": 0}
+
+    first_q = get_next_question(profile)
+    return AgentStartResponse(
+        session_id=session_id,
+        question=first_q["question_en"],
+        question_hi=first_q["question_hi"],
+        progress_pct=0,
+        hint=_get_hint(first_q),
+    )
+
+
+@router.post("/answer", response_model=AgentResponse)
+async def answer_question(req: AgentAnswerRequest):
+    """Submit an answer and get the next question or final scheme recommendations."""
+    session = _sessions.get(req.session_id)
+    if not session:
+        raise HTTPException(status_code=404,
+            detail="Session not found. Call /agent/start first.")
+
+    profile: UserProfile = session["profile"]
+
+    # Parse the current answer
+    current_q = get_next_question(profile)
+    if current_q:
+        parse_answer(current_q, req.answer, profile)
+
+    # Get next question
+    next_q = get_next_question(profile)
+    progress = profile.completion_pct()
+
+    # If interview is done (no more questions), retrieve schemes
+    if next_q is None or progress >= 100:
+        schemes = await _retrieve_schemes(profile)
+        # Clean up session
+        del _sessions[req.session_id]
+        return AgentResponse(
+            session_id=req.session_id,
+            done=True,
+            progress_pct=100,
+            schemes=schemes,
+            profile_summary=_profile_summary(profile),
+            message=_build_summary_msg(profile, len(schemes)),
+        )
+
+    return AgentResponse(
+        session_id=req.session_id,
+        done=False,
+        question=next_q["question_en"],
+        question_hi=next_q["question_hi"],
+        progress_pct=progress,
+    )
+
+
+@router.get("/session/{session_id}", response_model=AgentResponse)
+async def get_session_status(session_id: str):
+    """Get current session status and profile so far."""
+    session = _sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    profile: UserProfile = session["profile"]
+    next_q = get_next_question(profile)
+    return AgentResponse(
+        session_id=session_id,
+        done=next_q is None,
+        question=next_q["question_en"] if next_q else None,
+        question_hi=next_q["question_hi"] if next_q else None,
+        progress_pct=profile.completion_pct(),
+    )
+
+
+@router.delete("/session/{session_id}")
+async def clear_session(session_id: str):
+    """Clear a session (user wants to restart)."""
+    _sessions.pop(session_id, None)
+    return {"status": "cleared"}
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+async def _retrieve_schemes(profile: UserProfile) -> list[SchemeSuggestion]:
+    """Query ChromaDB with the user's profile and score results."""
+    try:
+        import chromadb
+        from chromadb.utils import embedding_functions
+        from pathlib import Path
+
+        chroma_dir = Path(__file__).parent.parent / "chroma_db"
+        client = chromadb.PersistentClient(path=str(chroma_dir))
+        ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name="all-MiniLM-L6-v2"
+        )
+        col = client.get_collection(name="yojna_setu_schemes", embedding_function=ef)
+
+        query = profile.to_query_string()
+
+        # Build optional state filter
+        where = None
+        if profile.state:
+            where = {"state": {"$in": [profile.state, "Central"]}}
+
+        results = col.query(
+            query_texts=[query],
+            n_results=TOP_N_SCHEMES * 2,  # retrieve more, then re-rank
+            where=where,
+        )
+
+        docs  = results["documents"][0]
+        metas = results["metadatas"][0]
+
+        suggestions = []
+        for doc, meta in zip(docs, metas):
+            score = score_eligibility(doc, profile)
+            if score >= 40:  # Only include reasonably relevant schemes
+                # Extract first benefit line from doc
+                benefit_line = ""
+                for line in doc.split("\n"):
+                    if line.startswith("Benefit:"):
+                        benefit_line = line.replace("Benefit:", "").strip()
+                        break
+
+                suggestions.append(SchemeSuggestion(
+                    name=meta.get("name", "Unknown Scheme"),
+                    sector=meta.get("sector", ""),
+                    state=meta.get("state", "Central"),
+                    benefit=benefit_line[:200],
+                    apply_url=meta.get("apply_url", ""),
+                    eligibility_score=score,
+                ))
+
+        # Sort by eligibility score descending
+        suggestions.sort(key=lambda x: x.eligibility_score, reverse=True)
+        return suggestions[:TOP_N_SCHEMES]
+
+    except Exception as e:
+        logger.error(f"Scheme retrieval error: {e}")
+        return []
+
+
+def _get_hint(question: dict) -> str:
+    hints = {
+        "state": "E.g. Maharashtra, Rajasthan, Bihar...",
+        "age":   "Enter your age as a number, e.g. 35",
+        "gender": "Type: male / female",
+        "caste_category": "Type SC / ST / OBC / General",
+        "occupation": "Type: farmer / student / salaried / unemployed / self_employed",
+        "income_lpa": "Enter annual family income in lakhs, e.g. 1.5",
+        "is_bpl": "Type: yes / no",
+        "has_house": "Type: yes / no — do you own a pucca house?",
+        "disability": "Type: yes / no",
+        "is_ex_serviceman": "Type: yes / no",
+    }
+    return hints.get(question["id"], "Please type your answer")
+
+
+def _profile_summary(profile: UserProfile) -> dict:
+    d = {k: v for k, v in vars(profile).items() if v is not None and v != []}
+    return d
+
+
+def _build_summary_msg(profile: UserProfile, num_schemes: int) -> str:
+    name = profile.name or "aap"
+    state = profile.state or "aapke rajya"
+    return (
+        f"Bahut achha! {name} ke liye hum ne {num_schemes} sarkari "
+        f"yojanaen {state} aur Central level par dhundhi hain. "
+        f"Inhe dekhein aur apply karna na bhoolein! 🙏"
+    )
