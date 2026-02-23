@@ -28,7 +28,7 @@ CHROMA_DIR   = Path(__file__).parent / "chroma_db"
 COLLECTION   = "yojna_setu_schemes"
 EMBED_MODEL  = "all-MiniLM-L6-v2"
 TOP_K        = 5
-GEMINI_MODEL = "gemini-2.0-flash-lite"
+GEMINI_MODEL = "gemini-2.0-flash"
 
 # ── Per-session memory store ──────────────────────────────────────────────────
 # { session_id: InMemoryChatMessageHistory }

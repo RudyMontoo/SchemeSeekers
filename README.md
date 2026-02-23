@@ -50,9 +50,10 @@ Spring Boot API Gateway (Java 17)
 An adaptive eligibility interview that builds your profile step-by-step and recommends the most relevant schemes.
 
 - Asks one question at a time in **Hinglish** + regional languages
-- Understands natural answers: *"mahila"* → female, *"kisan"* → farmer, *"ha"* → yes
-- Scores each scheme 0–100 for eligibility match
+- Understands natural Hinglish answers: *"mahila"* → female, *"mere paas nahi hai"* → No, *"bilkul"* → Yes
+- **Re-ranks schemes 3× by eligibility score** (0–100) before returning top results
 - Handles 13+ profile fields: state, age, gender, caste, income, BPL, occupation, disability, etc.
+- **New: `/agent/checklist`** — returns document requirements per scheme for CSC visits
 
 ### 2. 🎙️ Voice Pipeline — Bidirectional Audio Interview
 Full voice-to-voice conversation with the agent.
@@ -62,16 +63,18 @@ Full voice-to-voice conversation with the agent.
 - **Auto language selection**: detects user's state → picks correct regional language & voice
 - Streams MP3 audio directly back — no frontend processing needed
 
-### 3. 💬 RAG Chatbot — Hinglish Scheme Search
+### 3. 💬 RAG Chatbot — Hinglish Scheme Search with Memory
 Type any problem in plain language and get scheme recommendations.
 
-- *"Ghar banane ke liye paisa chahiye"* → finds PMAY, housing schemes
-- *"Beti ke liye scholarship"* → finds NSP, Beti Bachao schemes
+- **Per-session conversation memory** — remembers full context across messages in a session
+- **No-match hallucination guard** — if no scheme found, redirects to myscheme.gov.in honestly
+- **Streaming endpoint** (`/chat/stream`) — tokens stream as Gemini generates for faster UX
 - Filters by state + sector for hyper-relevant results
-- Powered by **Google Gemini 2.0 Flash** + **ChromaDB** vector search
+- Powered by **Google Gemini 2.0 Flash** + **ChromaDB** + `langchain_core` memory
 
 ### 4. 📡 Live Status Tracker
 Real-time application status scraped from official government portals.
+- **Auto-retry**: 3 retries with exponential backoff on slow/failing govt portals
 
 | Scheme | Portal | Input |
 |--------|--------|-------|
@@ -106,8 +109,9 @@ Sectors: Agriculture, Health, Education, Housing, Women & Child, SC/ST Welfare, 
 | Component | Technology |
 |-----------|-----------|
 | API Framework | FastAPI (Python 3.10+) |
-| LLM | Google Gemini 2.0 Flash Lite |
+| LLM | Google Gemini 2.0 Flash |
 | RAG / Agent | LangChain |
+| Conversation Memory | `langchain_core` `InMemoryChatMessageHistory` (per session) |
 | Vector Database | ChromaDB |
 | Embeddings | `all-MiniLM-L6-v2` (local, free) |
 | Primary STT | Sarvam Saarika v2 (22 Indian languages) |
@@ -115,7 +119,7 @@ Sectors: Agriculture, Health, Education, Housing, Women & Child, SC/ST Welfare, 
 | Primary TTS | Sarvam Bulbul v3 (natural Indian voices) |
 | Fallback TTS | gTTS (Hindi) |
 | Translation | Sarvam Mayura v1 |
-| Web Scraping | BeautifulSoup4 + Requests |
+| Web Scraping | BeautifulSoup4 + Requests (3× retry backoff) |
 | PII Detection | Regex (Python `re`) |
 
 ---
@@ -133,11 +137,11 @@ ai_service/
 │   └── yojna_sathi.py              # Interview engine + eligibility scorer
 │
 ├── routers/
-│   ├── chat.py                     # POST /chat — text chatbot
-│   ├── agent_router.py             # POST /agent/start, /agent/answer
+│   ├── chat.py                     # POST /chat, /chat/stream, DELETE /chat/session/{id}
+│   ├── agent_router.py             # POST /agent/start, /agent/answer, GET /agent/checklist
 │   ├── voice.py                    # POST /voice/transcribe, /voice/query
 │   ├── voice_conversation.py       # POST /voice/conversation/* (audio ↔ audio)
-│   └── status_tracker.py           # POST /status/check — live portal scraping
+│   └── status_tracker.py           # POST /status/check — live portal scraping (with retry)
 │
 ├── utils/
 │   ├── sarvam.py                   # Sarvam AI STT / TTS / Translation
@@ -206,17 +210,21 @@ API Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/chat/` | Text chatbot — Hinglish scheme search |
+| `POST` | `/chat/` | Text chatbot — Hinglish scheme search (with session memory) |
+| `POST` | `/chat/stream` | **NEW** — Streaming chatbot (tokens stream as generated) |
+| `DELETE` | `/chat/session/{id}` | **NEW** — Clear conversation memory for a session |
 | `POST` | `/agent/start` | Start eligibility interview |
 | `POST` | `/agent/answer` | Submit interview answer |
+| `GET` | `/agent/checklist` | **NEW** — Document requirements per scheme (`?query=pm+kisan&state=UP`) |
 | `POST` | `/voice/transcribe` | Audio file → text |
 | `POST` | `/voice/query` | Audio → schemes (end-to-end) |
 | `POST` | `/voice/conversation/start` | Start voice interview (returns MP3) |
 | `POST` | `/voice/conversation/answer` | Voice answer → voice response |
 | `POST` | `/voice/conversation/chat` | One-shot voice query |
 | `POST` | `/status/check` | Live scheme application status |
-| `GET`  | `/status/schemes` | List trackable schemes |
-| `GET`  | `/docs` | Swagger UI |
+| `GET` | `/status/schemes` | List trackable schemes |
+| `GET` | `/health` | **Updated** — Rich diagnostic (ChromaDB count, API keys, sessions) |
+| `GET` | `/docs` | Swagger UI |
 
 ---
 
@@ -224,7 +232,7 @@ API Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 | Member | Role |
 |--------|------|
-| **Rudra (AI/ML Lead)** | FastAPI, LangChain RAG, Yojna Sathi agent, Whisper/Sarvam voice pipeline, PII masking, Status Tracker |
+| **Rudra (AI/ML Lead)** | FastAPI, LangChain RAG+Memory, Yojna Sathi agent, Whisper/Sarvam voice pipeline, PII masking, Status Tracker, Streaming API |
 | Member 2 | Spring Boot API Gateway, JWT auth, PostgreSQL |
 | Member 3 | Flask OCR Worker, PaddleOCR, Maps/YouTube APIs |
 | Member 4 | React.js Frontend, Camera/Mic hooks, Multilingual UI |

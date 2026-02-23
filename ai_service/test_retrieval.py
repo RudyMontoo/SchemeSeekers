@@ -164,8 +164,13 @@ else:
         reply2 = invoke_with_memory(chain, "what schemes am I eligible for?", session_id="test-mem")
         return f"Memory reply: {reply2[:80]}..."
 
+    import time
     check("Basic RAG reply", check_rag_basic)
+    print("  ⏳ Waiting 15s to avoid rate limit...")
+    time.sleep(15)
     check("No-match guard", check_rag_no_match)
+    print("  ⏳ Waiting 15s to avoid rate limit...")
+    time.sleep(15)
     check("Conversation memory", check_rag_memory)
 
 

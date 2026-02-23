@@ -10,11 +10,16 @@
 - **Vernacular Greeting Engine** — detects user location/profile and greets in local language (Namaste, Vanakkam, Khamma Gani)
 - **No-Type NLP Search** — users type problems, not scheme names (*"Ghar banane ke liye paisa"* instead of *"PMAY-G"*)
 - **Dialect-Aware Voice Toggle** — persistent microphone using ASR, understands Hinglish + regional accents
+- **Session Memory** — chatbot remembers full conversation context across messages (`/chat` + `/chat/stream`)
+- **Hallucination Guard** — if no scheme matches, honestly redirects to myscheme.gov.in instead of hallucinating
 
 ### 2. "Yojna Sathi" (Interactive AI Agent)
 - **Conversational Agent** — friendly 2D avatar using TTS in a human-like voice
 - **Step-by-Step Eligibility Interview** — asks one adaptive question at a time based on previous answers
 - **Interruption Handling** — re-explains using simpler metaphors if the user is confused
+- **Expanded Hinglish Understanding** — recognizes *"mere paas nahi hai"*, *"bilkul"*, *"vidyarthi"*, *"kisan"*, *"berozgar"* and more
+- **Eligibility Re-Ranking** — retrieves 3× more candidates, scores 0–1000 by profile match, returns top-5
+- **Document Checklist API** — `GET /agent/checklist` returns required documents per scheme for CSC visits
 
 ### 3. Jan-Sahayak Document Lens
 - **Legality & Validity Scan** — OCR extracts expiry dates, detects official seals/stamps
@@ -37,6 +42,8 @@
   | PM Ujjwala Yojana | mylpg.in | Application ID |
 
 - **Hinglish Status Messages** — status shown in simple Hinglish (*"Aapka ghar ka 2nd installment aa gaya — lintel level complete!"*)
+- **Retry Logic** — 3 automatic retries with exponential backoff on slow/failing government portals
+
 
 ### 5. "Sahayak" Connectivity (Physical Help)
 - **GPS-Based CSC Discovery** — nearest Common Service Centre on integrated map with contact details
