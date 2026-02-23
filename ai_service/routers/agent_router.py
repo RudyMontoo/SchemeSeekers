@@ -142,7 +142,7 @@ async def clear_session(session_id: str):
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 async def _retrieve_schemes(profile: UserProfile) -> list[SchemeSuggestion]:
-    """Query ChromaDB with the user's profile and score results."""
+    """Query ChromaDB with the user's profile, re-rank by eligibility score."""
     try:
         import chromadb
         from chromadb.utils import embedding_functions
@@ -157,14 +157,15 @@ async def _retrieve_schemes(profile: UserProfile) -> list[SchemeSuggestion]:
 
         query = profile.to_query_string()
 
-        # Build optional state filter
+        # Broader state filter: include Central + user's state if known
         where = None
         if profile.state:
             where = {"state": {"$in": [profile.state, "Central"]}}
 
+        # Retrieve extra results for re-ranking
         results = col.query(
             query_texts=[query],
-            n_results=TOP_N_SCHEMES * 2,  # retrieve more, then re-rank
+            n_results=TOP_N_SCHEMES * 3,  # retrieve 3x more, then re-rank
             where=where,
         )
 
@@ -173,9 +174,8 @@ async def _retrieve_schemes(profile: UserProfile) -> list[SchemeSuggestion]:
 
         suggestions = []
         for doc, meta in zip(docs, metas):
-            score = score_eligibility(doc, profile)
-            if score >= 40:  # Only include reasonably relevant schemes
-                # Extract first benefit line from doc
+            score = score_eligibility(doc, profile)  # 0-100 eligibility score
+            if score >= 40:
                 benefit_line = ""
                 for line in doc.split("\n"):
                     if line.startswith("Benefit:"):
@@ -191,7 +191,7 @@ async def _retrieve_schemes(profile: UserProfile) -> list[SchemeSuggestion]:
                     eligibility_score=score,
                 ))
 
-        # Sort by eligibility score descending
+        # ── Re-rank: sort by eligibility score (highest first) ───────────────
         suggestions.sort(key=lambda x: x.eligibility_score, reverse=True)
         return suggestions[:TOP_N_SCHEMES]
 
@@ -204,16 +204,77 @@ def _get_hint(question: dict) -> str:
     hints = {
         "state": "E.g. Maharashtra, Rajasthan, Bihar...",
         "age":   "Enter your age as a number, e.g. 35",
-        "gender": "Type: male / female",
+        "gender": "Type: male / female (ya 'mahila' / 'purush')",
         "caste_category": "Type SC / ST / OBC / General",
         "occupation": "Type: farmer / student / salaried / unemployed / self_employed",
         "income_lpa": "Enter annual family income in lakhs, e.g. 1.5",
-        "is_bpl": "Type: yes / no",
-        "has_house": "Type: yes / no — do you own a pucca house?",
-        "disability": "Type: yes / no",
-        "is_ex_serviceman": "Type: yes / no",
+        "is_bpl": "Type: ha / nahi (yes / no)",
+        "has_house": "Type: ha / nahi — kya aapka pakka ghar hai?",
+        "disability": "Type: ha / nahi",
+        "is_ex_serviceman": "Type: ha / nahi",
     }
     return hints.get(question["id"], "Please type your answer")
+
+
+# ── /agent/checklist — document requirements for a scheme ─────────────────────
+class ChecklistResponse(BaseModel):
+    scheme_name: str
+    sector: str
+    state: str
+    documents: list[str]
+    apply_url: str
+    tip: str
+
+
+@router.get("/checklist", response_model=list[ChecklistResponse])
+async def get_scheme_checklist(query: str, state: str = None, top_k: int = 3):
+    """
+    Returns document checklists for the most relevant schemes matching a query.
+    Example: GET /agent/checklist?query=pm+kisan&state=Rajasthan
+    """
+    try:
+        import chromadb, re
+        from chromadb.utils import embedding_functions
+        from pathlib import Path
+
+        chroma_dir = Path(__file__).parent.parent / "chroma_db"
+        client = chromadb.PersistentClient(path=str(chroma_dir))
+        ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+        col = client.get_collection(name="yojna_setu_schemes", embedding_function=ef)
+
+        where = {"state": {"$in": [state, "Central"]}} if state else None
+        results = col.query(query_texts=[query], n_results=top_k, where=where)
+
+        docs  = results["documents"][0]
+        metas = results["metadatas"][0]
+
+        checklists = []
+        for doc, meta in zip(docs, metas):
+            # Extract "Documents Required:" line from the stored text chunk
+            docs_line = ""
+            for line in doc.split("\n"):
+                if line.lower().startswith("documents required:"):
+                    docs_line = line.replace("Documents Required:", "").strip()
+                    break
+
+            doc_list = [d.strip() for d in docs_line.split(",") if d.strip()] if docs_line else []
+            if not doc_list:
+                doc_list = ["Aadhaar Card", "Bank Passbook", "Passport size photo"]
+
+            checklists.append(ChecklistResponse(
+                scheme_name=meta.get("name", ""),
+                sector=meta.get("sector", ""),
+                state=meta.get("state", "Central"),
+                documents=doc_list,
+                apply_url=meta.get("apply_url", ""),
+                tip="Yeh documents lekar apne nazdiki CSC centre jayein ya upar diye link par online apply karein.",
+            ))
+
+        return checklists
+
+    except Exception as e:
+        logger.error(f"Checklist error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 def _profile_summary(profile: UserProfile) -> dict:

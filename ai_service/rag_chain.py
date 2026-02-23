@@ -2,13 +2,15 @@
 RAG Chain — Yojna Setu
 LangChain retrieval chain using ChromaDB + Google Gemini
 
-Can be used standalone or imported into FastAPI routers.
+Improvements:
+  - Per-session conversation memory (ConversationBufferMemory)
+  - No-match hallucination guard
+  - Streaming support via chain.stream()
 """
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env from ai_service directory (works regardless of cwd)
 _env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=_env_path, override=True)
 
@@ -16,68 +18,103 @@ import chromadb
 from chromadb.utils import embedding_functions
 
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
+from langchain.memory import ConversationBufferMemory
 
 # ── Config ────────────────────────────────────────────────────────────────────
-CHROMA_DIR = Path(__file__).parent / "chroma_db"
-COLLECTION  = "yojna_setu_schemes"
-EMBED_MODEL = "all-MiniLM-L6-v2"
-TOP_K       = 5           # how many schemes to retrieve per query
+CHROMA_DIR   = Path(__file__).parent / "chroma_db"
+COLLECTION   = "yojna_setu_schemes"
+EMBED_MODEL  = "all-MiniLM-L6-v2"
+TOP_K        = 5
 GEMINI_MODEL = "gemini-2.0-flash-lite"
 
-# ── System Prompt ─────────────────────────────────────────────────────────────
-SYSTEM_PROMPT = """
-You are Yojna Sathi — a friendly, empathetic AI assistant of Yojna Setu that helps Indian citizens 
-discover and apply for government schemes in simple Hinglish (Hindi + English mix).
+# ── Per-session memory store ──────────────────────────────────────────────────
+# { session_id: ConversationBufferMemory }
+_memory_store: dict[str, ConversationBufferMemory] = {}
 
-Use the retrieved scheme context below to answer the user's question.
-Always reply in simple, conversational Hinglish that a village resident would understand.
+NO_MATCH_RESPONSE = (
+    "Maafi kijiye, aapke sawal se related koi yojana abhi hamare database mein nahi mili. "
+    "Aap seedha https://myscheme.gov.in par ja ke apni eligibility check kar sakte hain. "
+    "Kya main kisi aur topic mein aapki madad kar sakta hun?"
+)
+
+# ── System Prompt ─────────────────────────────────────────────────────────────
+SYSTEM_PROMPT = """\
+You are Yojna Sathi — a friendly, empathetic AI assistant for Yojna Setu that helps \
+Indian citizens discover and apply for government schemes in simple Hinglish (Hindi + English mix).
+
+Use ONLY the retrieved scheme context below. NEVER hallucinate scheme names, amounts, or portals.
 
 RULES:
-- Only recommend schemes from the retrieved context. Never hallucinate scheme names or amounts.
-- For each relevant scheme, mention: Name, Benefit, Who is eligible, and where to apply.
-- If the user gives their state, prioritize state-specific schemes.
-- If no scheme matches, say so honestly and suggest they visit https://myscheme.gov.in
+- If context says "No matching schemes found" — say so honestly, suggest myscheme.gov.in.
+- For each scheme mention: Name, Benefit (₹ amount), Who is eligible, Where to apply.
+- Prioritize state-specific schemes if the user mentions their state.
 - Keep response concise — max 3-4 schemes unless more are asked.
-- Format benefit amounts in ₹ (Rupee symbol).
-- End with an encouraging line.
+- End with an encouraging Hinglish line.
+- You have memory of this conversation — use it for context.
 
 Retrieved Schemes Context:
 {context}
 """
 
-USER_PROMPT = "{question}"
-
-# ── Build retriever from ChromaDB ─────────────────────────────────────────────
+# ── ChromaDB retriever ────────────────────────────────────────────────────────
 def get_retriever(top_k: int = TOP_K):
     client = chromadb.PersistentClient(path=str(CHROMA_DIR))
-    ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name=EMBED_MODEL
-    )
+    ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name=EMBED_MODEL)
     collection = client.get_collection(name=COLLECTION, embedding_function=ef)
 
     def retrieve(query: str, filters: dict = None) -> str:
-        where = filters if filters else None
         results = collection.query(
             query_texts=[query],
             n_results=top_k,
-            where=where,
+            where=filters if filters else None,
         )
-        docs = results.get("documents", [[]])[0]
+        docs  = results.get("documents", [[]])[0]
         metas = results.get("metadatas", [[]])[0]
+
         if not docs:
             return "No matching schemes found."
+
         chunks = []
         for i, (doc, meta) in enumerate(zip(docs, metas), 1):
-            chunks.append(f"[Scheme {i} — {meta.get('state','Central')} / {meta.get('sector','')}]\n{doc}")
+            chunks.append(
+                f"[Scheme {i} — {meta.get('state','Central')} / {meta.get('sector','')}]\n{doc}"
+            )
         return "\n\n".join(chunks)
 
     return retrieve
 
 
-# ── Build the full RAG chain ──────────────────────────────────────────────────
+def get_chromadb_count() -> int:
+    """Return number of documents currently indexed in ChromaDB."""
+    try:
+        client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+        ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name=EMBED_MODEL)
+        col = client.get_collection(name=COLLECTION, embedding_function=ef)
+        return col.count()
+    except Exception:
+        return -1
+
+
+# ── Memory helpers ────────────────────────────────────────────────────────────
+def get_memory(session_id: str) -> ConversationBufferMemory:
+    """Get or create a memory buffer for the given session."""
+    if session_id not in _memory_store:
+        _memory_store[session_id] = ConversationBufferMemory(
+            return_messages=True,
+            memory_key="chat_history",
+        )
+    return _memory_store[session_id]
+
+
+def clear_memory(session_id: str):
+    """Clear session memory (e.g. when user starts fresh)."""
+    _memory_store.pop(session_id, None)
+
+
+# ── Build RAG chain (stateless — memory injected per call) ────────────────────
 def build_rag_chain():
     llm = ChatGoogleGenerativeAI(
         model=GEMINI_MODEL,
@@ -88,13 +125,15 @@ def build_rag_chain():
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", SYSTEM_PROMPT),
-        ("human", USER_PROMPT),
+        MessagesPlaceholder(variable_name="chat_history"),
+        ("human", "{question}"),
     ])
 
     chain = (
         {
-            "context": lambda x: retriever(x["question"], x.get("filters")),
-            "question": RunnablePassthrough() | (lambda x: x["question"]),
+            "context":      lambda x: retriever(x["question"], x.get("filters")),
+            "question":     RunnablePassthrough() | (lambda x: x["question"]),
+            "chat_history": lambda x: x.get("chat_history", []),
         }
         | prompt
         | llm
@@ -104,21 +143,58 @@ def build_rag_chain():
     return chain
 
 
+def invoke_with_memory(
+    chain,
+    question: str,
+    session_id: str = "default",
+    filters: dict = None,
+) -> str:
+    """
+    Invoke the RAG chain with conversation memory.
+    Saves the exchange to session memory automatically.
+    """
+    memory = get_memory(session_id)
+    history = memory.chat_memory.messages
+
+    context_text = get_retriever()(question, filters)
+
+    # No-match guard — don't call LLM if nothing found
+    if context_text.strip() == "No matching schemes found.":
+        memory.chat_memory.add_user_message(question)
+        memory.chat_memory.add_ai_message(NO_MATCH_RESPONSE)
+        return NO_MATCH_RESPONSE
+
+    result = chain.invoke({
+        "question": question,
+        "filters": filters,
+        "chat_history": history,
+    })
+
+    # Save to memory
+    memory.chat_memory.add_user_message(question)
+    memory.chat_memory.add_ai_message(result)
+
+    return result
+
+
 # ── Standalone test ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("🔗 Building RAG chain...")
+    print(f"🔗 ChromaDB schemes indexed: {get_chromadb_count()}")
+    print("🔗 Building RAG chain...\n")
     chain = build_rag_chain()
 
-    test_queries = [
-        {"question": "Main ek kisan hoon Rajasthan se, mujhe koi subsidy milegi?"},
-        {"question": "Meri beti ke liye koi scholarship hai?"},
-        {"question": "Ex-serviceman hun, health insurance milega?"},
-        {"question": "Ghar banane ke liye government se paisa milega?"},
+    test_session = "test-001"
+    queries = [
+        "Main ek kisan hoon Rajasthan se, mujhe koi subsidy milegi?",
+        "Meri beti ke liye koi scholarship hai?",
+        "Pichle sawal ka jawab dobara batao",       # memory test
+        "Ghar banane ke liye paisa milega?",
+        "koi alien scheme hai?",                    # no-match guard test
     ]
 
-    for q in test_queries:
-        print(f"\n❓ {q['question']}")
+    for q in queries:
+        print(f"❓ {q}")
         print("─" * 60)
-        answer = chain.invoke(q)
-        print(answer)
-        print("═" * 60)
+        ans = invoke_with_memory(chain, q, session_id=test_session)
+        print(ans)
+        print("═" * 60 + "\n")

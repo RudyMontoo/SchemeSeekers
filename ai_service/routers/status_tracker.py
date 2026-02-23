@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 import re
 import json
 from typing import Optional
+from requests.adapters import HTTPAdapter, Retry
 
 router = APIRouter(prefix="/status", tags=["Status Tracker"])
 
@@ -22,8 +23,17 @@ HEADERS = {
     "Accept-Language": "en-IN,en;q=0.9,hi;q=0.8",
 }
 
+# Retry strategy: 3 retries with exponential backoff (1s, 2s, 4s)
+_retry_strategy = Retry(
+    total=3,
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["GET", "POST"],
+)
 SESSION = requests.Session()
 SESSION.headers.update(HEADERS)
+SESSION.mount("https://", HTTPAdapter(max_retries=_retry_strategy))
+SESSION.mount("http://",  HTTPAdapter(max_retries=_retry_strategy))
 
 # ─── Request / Response Models ──────────────────────────────────────────────
 

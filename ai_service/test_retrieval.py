@@ -1,37 +1,194 @@
-"""Quick test: ChromaDB retrieval works without any Gemini key"""
-import sys
-sys.path.insert(0, "/home/rudra/dev/playground/Yojna_Setu")
+"""
+Test & Validation Script — Yojna Setu AI Service
+Runs before every demo to verify all components are working.
 
-import chromadb
-from chromadb.utils import embedding_functions
+Usage: python ai_service/test_retrieval.py
+"""
+import sys
+import os
 from pathlib import Path
 
-CHROMA_DIR = Path("/home/rudra/dev/playground/Yojna_Setu/ai_service/chroma_db")
-COLLECTION  = "yojna_setu_schemes"
-EMBED_MODEL = "all-MiniLM-L6-v2"
+# Ensure ai_service is importable
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-print("🔍 Connecting to ChromaDB...")
-client = chromadb.PersistentClient(path=str(CHROMA_DIR))
-ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name=EMBED_MODEL)
-col = client.get_collection(name=COLLECTION, embedding_function=ef)
-print(f"✅ Collection '{COLLECTION}': {col.count()} documents\n")
+# Load .env
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parent / ".env")
 
-queries = [
-    ("kisan subsidy Rajasthan", {}),
-    ("beti padhai scholarship", {}),
-    ("ex-serviceman health insurance", {}),
-    ("ghar banane paisa milega", {}),
-    ("tribal students scholarship", {"sector": {"$eq": "tribal"}}),
-]
+PASS = "✅"
+FAIL = "❌"
+WARN = "⚠️ "
+results = []
 
-for query, filters in queries:
-    where = filters if filters else None
-    results = col.query(query_texts=[query], n_results=3, where=where)
-    docs = results["documents"][0]
-    metas = results["metadatas"][0]
-    print(f"❓ Query: '{query}'")
-    for i, (doc, meta) in enumerate(zip(docs, metas), 1):
-        first_line = doc.split("\n")[0]
-        print(f"  {i}. [{meta['state']} | {meta['sector']}] {first_line}")
-    print()
-print("✅ ChromaDB retrieval test PASSED")
+
+def check(label: str, fn):
+    try:
+        result = fn()
+        print(f"  {PASS} {label}: {result}")
+        results.append((label, True))
+        return result
+    except Exception as e:
+        print(f"  {FAIL} {label}: {e}")
+        results.append((label, False))
+        return None
+
+
+# ── 1. ChromaDB Validation ────────────────────────────────────────────────────
+print("\n📦 1. ChromaDB Index")
+import chromadb
+from chromadb.utils import embedding_functions
+
+chroma_dir = Path(__file__).parent / "chroma_db"
+ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+
+def check_chroma():
+    client = chromadb.PersistentClient(path=str(chroma_dir))
+    col = client.get_collection("yojna_setu_schemes", embedding_function=ef)
+    count = col.count()
+    assert count > 400, f"Expected 419+ schemes, got {count}"
+    return f"{count} schemes indexed"
+
+check("ChromaDB index count", check_chroma)
+
+def check_retrieval():
+    client = chromadb.PersistentClient(path=str(chroma_dir))
+    col = client.get_collection("yojna_setu_schemes", embedding_function=ef)
+    res = col.query(query_texts=["farmer subsidy Rajasthan"], n_results=3)
+    docs = res["documents"][0]
+    assert len(docs) > 0, "No results for farmer query"
+    return f"{len(docs)} docs retrieved for 'farmer subsidy Rajasthan'"
+
+check("Semantic retrieval (farmer query)", check_retrieval)
+
+def check_state_filter():
+    client = chromadb.PersistentClient(path=str(chroma_dir))
+    col = client.get_collection("yojna_setu_schemes", embedding_function=ef)
+    res = col.query(
+        query_texts=["housing scheme"],
+        n_results=3,
+        where={"state": {"$in": ["Maharashtra", "Central"]}}
+    )
+    return f"{len(res['documents'][0])} results with Maharashtra filter"
+
+check("State filter works", check_state_filter)
+
+
+# ── 2. PII Masker ─────────────────────────────────────────────────────────────
+print("\n🔒 2. PII Masker")
+from ai_service.utils.pii_masker import mask_pii
+
+def check_aadhaar():
+    masked, pii = mask_pii("Mera Aadhaar 9876 5432 1234 hai")
+    assert "aadhaar" in pii and "XXXX" in masked
+    return f"Detected: {pii}"
+
+def check_pan():
+    masked, pii = mask_pii("PAN card ABCDE1234F chahiye")
+    assert "pan" in pii
+    return f"Detected: {pii}"
+
+def check_phone():
+    masked, pii = mask_pii("9876543210 pe call karo")
+    assert "phone" in pii
+    return f"Detected: {pii}"
+
+check("Aadhaar masking", check_aadhaar)
+check("PAN masking", check_pan)
+check("Phone masking", check_phone)
+
+
+# ── 3. Yojna Sathi Agent ─────────────────────────────────────────────────────
+print("\n🤖 3. Agent Interview Engine")
+from ai_service.agent.yojna_sathi import UserProfile, get_next_question, parse_answer, score_eligibility
+
+def check_interview_flow():
+    p = UserProfile()
+    answers = {
+        "state": "Maharashtra", "age": "35", "gender": "mahila",
+        "caste_category": "sc", "occupation": "kisan", "income_lpa": "1.2",
+        "is_bpl": "ha", "has_house": "nahi hai", "disability": "no",
+        "is_ex_serviceman": "no",
+    }
+    for _ in range(15):
+        q = get_next_question(p)
+        if not q:
+            break
+        parse_answer(q, answers.get(q["id"], "no"), p)
+    return f"Completion: {p.completion_pct()}% | State: {p.state} | Gender: {p.gender} | BPL: {p.is_bpl}"
+
+def check_negation_parsing():
+    p = UserProfile()
+    q = {"id": "has_house", "field": "has_house", "type": "bool", "question_en": ""}
+    # Test complex Hinglish negation
+    parse_answer(q, "mere paas nahi hai", p)
+    assert p.has_house is False, f"Expected False, got {p.has_house}"
+    parse_answer(q, "bilkul", p)
+    assert p.has_house is True, f"Expected True, got {p.has_house}"
+    return "Negation/affirmation parsing correct"
+
+def check_eligibility_score():
+    p = UserProfile(gender="female", caste_category="sc", is_bpl=True, occupation="farmer")
+    score = score_eligibility("Benefit for SC women kisan farmers BPL", p)
+    assert score >= 70, f"Expected >=70, got {score}"
+    return f"SC+female+farmer+BPL score: {score}/100"
+
+check("Interview flow (10 questions)", check_interview_flow)
+check("Hinglish negation parsing", check_negation_parsing)
+check("Eligibility scoring", check_eligibility_score)
+
+
+# ── 4. RAG Chain ─────────────────────────────────────────────────────────────
+print("\n🔗 4. RAG Chain (requires GEMINI_API_KEY)")
+
+gemini_key = os.getenv("GEMINI_API_KEY")
+if not gemini_key:
+    print(f"  {WARN}  GEMINI_API_KEY not set — skipping LLM tests")
+else:
+    from ai_service.rag_chain import build_rag_chain, invoke_with_memory, get_chromadb_count
+
+    def check_rag_basic():
+        chain = build_rag_chain()
+        reply = invoke_with_memory(chain, "housing scheme for poor families", session_id="test-rag")
+        assert len(reply) > 20, "Reply too short"
+        return f"Reply: {reply[:80]}..."
+
+    def check_rag_no_match():
+        chain = build_rag_chain()
+        reply = invoke_with_memory(chain, "alien spaceship scheme xyz123", session_id="test-nomatch")
+        assert "myscheme" in reply.lower() or "maafi" in reply.lower(), "No-match guard didn't fire"
+        return "No-match guard triggered correctly"
+
+    def check_rag_memory():
+        chain = build_rag_chain()
+        invoke_with_memory(chain, "I am a farmer from Bihar", session_id="test-mem")
+        reply2 = invoke_with_memory(chain, "what schemes am I eligible for?", session_id="test-mem")
+        return f"Memory reply: {reply2[:80]}..."
+
+    check("Basic RAG reply", check_rag_basic)
+    check("No-match guard", check_rag_no_match)
+    check("Conversation memory", check_rag_memory)
+
+
+# ── 5. API Key Summary ────────────────────────────────────────────────────────
+print("\n🔑 5. API Key Status")
+print(f"  {'✅' if os.getenv('GEMINI_API_KEY') else '❌'} GEMINI_API_KEY")
+print(f"  {'✅' if os.getenv('SARVAM_API_KEY') else WARN} SARVAM_API_KEY (optional — falls back to gTTS/Whisper)")
+
+
+# ── Summary ───────────────────────────────────────────────────────────────────
+total  = len(results)
+passed = sum(1 for _, ok in results if ok)
+failed = total - passed
+
+print(f"\n{'='*50}")
+print(f"📊 Results: {passed}/{total} passed", end="")
+if failed:
+    print(f"  ({failed} FAILED ❌)")
+    for label, ok in results:
+        if not ok:
+            print(f"   → FAILED: {label}")
+else:
+    print("  🎉 All checks passed!")
+print(f"{'='*50}\n")
+
+sys.exit(0 if failed == 0 else 1)

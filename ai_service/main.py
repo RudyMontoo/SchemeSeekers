@@ -65,7 +65,28 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    """Rich health check — shows ChromaDB index count, API keys, and service status."""
+    import os
+    from ai_service.rag_chain import get_chromadb_count, _memory_store
+
+    chroma_count = get_chromadb_count()
+    return {
+        "status": "ok",
+        "version": "1.0.0",
+        "chromadb": {
+            "indexed_schemes": chroma_count,
+            "healthy": chroma_count > 0,
+        },
+        "api_keys": {
+            "gemini":  bool(os.getenv("GEMINI_API_KEY")),
+            "sarvam":  bool(os.getenv("SARVAM_API_KEY")),
+        },
+        "voice": {
+            "whisper_model": os.getenv("WHISPER_MODEL", "base"),
+            "sarvam_tts_active": bool(os.getenv("SARVAM_API_KEY")),
+        },
+        "chat_sessions_active": len(_memory_store),
+    }
 
 
 # ── Dev server ────────────────────────────────────────────────────────────────

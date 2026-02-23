@@ -1,9 +1,12 @@
 """
 FastAPI Chat Router — Yojna Setu
-/chat endpoint: accepts user message + optional state/sector filter
-returns Hinglish AI response with matched schemes
+/chat endpoint: Hinglish scheme chatbot with:
+  - Per-session conversation memory
+  - No-match hallucination guard
+  - Streaming support (/chat/stream)
 """
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
 import logging
@@ -11,7 +14,6 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
 
-# Lazy-load the chain (only on first request, avoids startup delay)
 _rag_chain = None
 
 def get_chain():
@@ -25,9 +27,10 @@ def get_chain():
 # ── Request / Response models ──────────────────────────────────────────────────
 class ChatRequest(BaseModel):
     message: str
-    state: Optional[str] = None        # e.g. "Rajasthan", "Maharashtra"
-    sector: Optional[str] = None       # e.g. "health", "education"
-    language: Optional[str] = "hinglish"  # hinglish | hindi | english
+    session_id: Optional[str] = "default"   # for conversation memory
+    state: Optional[str] = None             # e.g. "Rajasthan"
+    sector: Optional[str] = None            # e.g. "health"
+    language: Optional[str] = "hinglish"
 
 class SchemeMatch(BaseModel):
     name: str
@@ -39,11 +42,11 @@ class ChatResponse(BaseModel):
     reply: str
     language: str
     matched_schemes: list[SchemeMatch]
+    session_id: str
 
 
-# ── Helper: extract scheme metadata from ChromaDB result ──────────────────────
+# ── Helper ─────────────────────────────────────────────────────────────────────
 def build_filters(state: Optional[str], sector: Optional[str]) -> Optional[dict]:
-    """Build ChromaDB where-clause from optional filters."""
     conditions = []
     if state:
         conditions.append({"state": {"$in": [state, "Central"]}})
@@ -56,30 +59,9 @@ def build_filters(state: Optional[str], sector: Optional[str]) -> Optional[dict]
     return None
 
 
-# ── Route ──────────────────────────────────────────────────────────────────────
-@router.post("/", response_model=ChatResponse)
-async def chat(req: ChatRequest):
-    if not req.message.strip():
-        raise HTTPException(status_code=400, detail="Message cannot be empty")
-
+def fetch_matched_schemes(query: str, filters: Optional[dict]) -> list[SchemeMatch]:
+    """Query ChromaDB directly for structured scheme metadata."""
     try:
-        chain = get_chain()
-
-        # Build retrieval filters
-        filters = build_filters(req.state, req.sector)
-
-        # Run RAG chain
-        reply = chain.invoke({
-            "question": req.message,
-            "filters": filters,
-        })
-
-        # Fetch top matched schemes for structured response
-        from ai_service.rag_chain import get_retriever
-        retriever = get_retriever(top_k=3)
-        raw_context = retriever(req.message, filters)
-
-        # Parse matched scheme metadata (lightweight)
         import chromadb
         from pathlib import Path
         from chromadb.utils import embedding_functions
@@ -89,11 +71,9 @@ async def chat(req: ChatRequest):
         ef = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name="all-MiniLM-L6-v2"
         )
-        collection = client.get_collection(
-            name="yojna_setu_schemes", embedding_function=ef
-        )
+        collection = client.get_collection(name="yojna_setu_schemes", embedding_function=ef)
         results = collection.query(
-            query_texts=[req.message], n_results=3,
+            query_texts=[query], n_results=3,
             where=filters if filters else None,
         )
         matched = []
@@ -104,16 +84,98 @@ async def chat(req: ChatRequest):
                 state=meta.get("state", "Central"),
                 apply_url=meta.get("apply_url", ""),
             ))
+        return matched
+    except Exception as e:
+        logger.warning(f"Scheme metadata fetch failed: {e}")
+        return []
+
+
+# ── Standard chat route (with memory) ─────────────────────────────────────────
+@router.post("/", response_model=ChatResponse)
+async def chat(req: ChatRequest):
+    if not req.message.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+    try:
+        from ai_service.rag_chain import invoke_with_memory
+        chain   = get_chain()
+        filters = build_filters(req.state, req.sector)
+
+        # Invoke with per-session memory + no-match guard built-in
+        reply = invoke_with_memory(
+            chain,
+            question=req.message,
+            session_id=req.session_id or "default",
+            filters=filters,
+        )
+
+        matched = fetch_matched_schemes(req.message, filters)
 
         return ChatResponse(
             reply=reply,
             language=req.language or "hinglish",
             matched_schemes=matched,
+            session_id=req.session_id or "default",
         )
 
     except Exception as e:
         logger.error(f"Chat error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Streaming chat route ───────────────────────────────────────────────────────
+@router.post("/stream")
+async def chat_stream(req: ChatRequest):
+    """
+    Streaming version — yields tokens as they arrive from Gemini.
+    Frontend can use EventSource or fetch with ReadableStream.
+    """
+    if not req.message.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+    try:
+        from ai_service.rag_chain import get_retriever, get_memory, NO_MATCH_RESPONSE
+        chain   = get_chain()
+        filters = build_filters(req.state, req.sector)
+        memory  = get_memory(req.session_id or "default")
+
+        context_text = get_retriever()(req.message, filters)
+
+        # No-match guard for streaming
+        if context_text.strip() == "No matching schemes found.":
+            async def no_match_gen():
+                yield NO_MATCH_RESPONSE
+            return StreamingResponse(no_match_gen(), media_type="text/plain")
+
+        history = memory.chat_memory.messages
+
+        async def token_generator():
+            full_response = ""
+            for chunk in chain.stream({
+                "question":     req.message,
+                "filters":      filters,
+                "chat_history": history,
+            }):
+                full_response += chunk
+                yield chunk
+            # Save to memory after streaming completes
+            memory.chat_memory.add_user_message(req.message)
+            memory.chat_memory.add_ai_message(full_response)
+
+        return StreamingResponse(token_generator(), media_type="text/plain")
+
+    except Exception as e:
+        logger.error(f"Stream error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Clear session memory ───────────────────────────────────────────────────────
+@router.delete("/session/{session_id}")
+async def clear_session(session_id: str):
+    """Clear conversation memory for a session (fresh start)."""
+    from ai_service.rag_chain import clear_memory
+    clear_memory(session_id)
+    return {"status": "cleared", "session_id": session_id}
 
 
 # ── Health check ───────────────────────────────────────────────────────────────

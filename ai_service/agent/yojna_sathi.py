@@ -189,6 +189,21 @@ def get_next_question(profile: UserProfile) -> Optional[dict]:
     return None  # Interview complete
 
 
+# ── Hinglish affirmation / negation word lists ──────────────────────────────
+AFFIRMATIONS = {
+    "yes", "y", "ha", "haan", "han", "hā", "haa", "1", "true",
+    "bilkul", "zaroor", "sahi", "theek", "okay", "ok",
+    "हाँ", "हां", "बिल्कुल", "ठीक",
+}
+NEGATIONS = {
+    "no", "n", "nahi", "nahin", "nhi", "na", "naa", "0", "false",
+    "never", "bilkul nahi", "nope",
+    "नहीं", "ना", "नहि",
+    # phrases like "mere paas nahi", "hamare yahan nahi"
+    "nahi hai", "nahin hai", "nhi hai", "paas nahi", "pas nahi",
+}
+
+
 def parse_answer(question: dict, raw_answer: str, profile: UserProfile) -> UserProfile:
     """Parse a raw text answer and update the profile."""
     raw = raw_answer.strip().lower()
@@ -196,7 +211,15 @@ def parse_answer(question: dict, raw_answer: str, profile: UserProfile) -> UserP
     qtype = question["type"]
 
     if qtype == "bool":
-        val = raw in ("yes", "y", "ha", "haan", "hā", "1", "true", "हाँ")
+        # Check negations first (longer phrases), then affirmations
+        is_negation = any(neg in raw for neg in sorted(NEGATIONS, key=len, reverse=True))
+        is_affirm   = any(aff in raw for aff in sorted(AFFIRMATIONS, key=len, reverse=True))
+        if is_negation:
+            val = False
+        elif is_affirm:
+            val = True
+        else:
+            val = False  # safe default
         setattr(profile, field, val)
 
     elif qtype == "number":
@@ -208,30 +231,52 @@ def parse_answer(question: dict, raw_answer: str, profile: UserProfile) -> UserP
 
     elif qtype == "choice":
         choices = question.get("choices", [])
-        # Try direct match or first-word match
-        for c in choices:
-            if c in raw or raw.startswith(c[0]):
-                setattr(profile, field, c)
+        # Expanded Hinglish keyword maps
+        HINGLISH_MAPS = {
+            "gender": {
+                "mahila": "female", "aurat": "female", "ladki": "female",
+                "stri": "female", "woman": "female", "girl": "female",
+                "purush": "male", "aadmi": "male", "ladka": "male",
+                "mard": "male", "man": "male", "boy": "male",
+            },
+            "caste_category": {
+                "anusuchit jati": "sc", "anusuchit": "sc", "scheduled caste": "sc",
+                "janjati": "st", "adivasi": "st", "tribal": "st", "scheduled tribe": "st",
+                "pichhda": "obc", "other backward": "obc",
+                "samanya": "general", "gen": "general", "unreserved": "general",
+                "open": "general",
+            },
+            "occupation": {
+                "kisan": "farmer", "kheti": "farmer", "agriculture": "farmer",
+                "khet": "farmer", "farming": "farmer",
+                "naukri": "salaried", "job": "salaried", "service": "salaried",
+                "sarkari": "salaried", "private": "salaried",
+                "padhai": "student", "college": "student", "school": "student",
+                "vidyarthi": "student",
+                "business": "self_employed", "dukan": "self_employed",
+                "vyapar": "self_employed", "self": "self_employed",
+                "berozgar": "unemployed", "koi kaam nahi": "unemployed",
+                "unemployed": "unemployed", "ghar baithe": "unemployed",
+            },
+        }
+        mapping = HINGLISH_MAPS.get(field, {})
+        matched = False
+        # Try longest keyword match first to avoid partial false matches
+        for kw in sorted(mapping.keys(), key=len, reverse=True):
+            if kw in raw:
+                setattr(profile, field, mapping[kw])
+                matched = True
                 break
-        else:
-            # Hinglish keyword matching
-            HINGLISH_MAPS = {
-                "gender": {"mahila": "female", "aurat": "female", "ladki": "female",
-                            "purush": "male", "aadmi": "male", "ladka": "male"},
-                "caste_category": {"anusuchit": "sc", "janjati": "st", "adivasi": "st",
-                                   "pichhda": "obc", "samanya": "general", "gen": "general"},
-                "occupation": {"kisan": "farmer", "kheti": "farmer", "naukri": "salaried",
-                               "padhai": "student", "business": "self_employed",
-                               "berozgar": "unemployed"},
-            }
-            mapping = HINGLISH_MAPS.get(field, {})
-            for kw, mapped in mapping.items():
-                if kw in raw:
-                    setattr(profile, field, mapped)
+        if not matched:
+            # Try direct choice match
+            for c in choices:
+                if c in raw:
+                    setattr(profile, field, c)
+                    matched = True
                     break
-            else:
-                # Fallback: set whatever they said
-                setattr(profile, field, raw_answer.strip())
+        if not matched:
+            # Fallback: store raw
+            setattr(profile, field, raw_answer.strip())
 
     else:  # text
         setattr(profile, field, raw_answer.strip().title())
