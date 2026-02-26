@@ -41,6 +41,7 @@ from ai_service.routers.agent_router import router as agent_router
 from ai_service.routers.voice import router as voice_router
 from ai_service.routers.voice_conversation import router as voice_conv_router
 from ai_service.routers.help_discovery import router as help_router
+from ai_service.routers.apply_guide import router as apply_router
 
 app.include_router(chat_router)
 app.include_router(status_router, prefix="/status")
@@ -48,6 +49,7 @@ app.include_router(agent_router)
 app.include_router(voice_router)
 app.include_router(voice_conv_router)
 app.include_router(help_router)
+app.include_router(apply_router)
 
 # ── Root ───────────────────────────────────────────────────────────────────────
 @app.get("/")
@@ -62,6 +64,8 @@ async def root():
             "status_tracker": "/status/check — Live scheme application status",
             "help_csc":       "/help/csc/nearby — CSC Centre locator (OpenStreetMap)",
             "help_doc":       "/help/doc/guide — Document help guide (YouTube + portal)",
+            "apply_guide":    "/apply/guide — Step-by-step Hinglish application wizard",
+            "apply_schemes":  "/apply/schemes — List all guided schemes",
             "docs":           "/docs",
         }
     }

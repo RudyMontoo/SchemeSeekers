@@ -44,6 +44,7 @@ class SchemeSuggestion(BaseModel):
     benefit: str
     apply_url: str
     eligibility_score: int
+    apply_guide_url: Optional[str] = None   # /apply/guide?scheme_key=... (if wizard exists)
 
 class AgentResponse(BaseModel):
     session_id: str
@@ -182,6 +183,26 @@ async def _retrieve_schemes(profile: UserProfile) -> list[SchemeSuggestion]:
                         benefit_line = line.replace("Benefit:", "").strip()
                         break
 
+                # Check if a guided wizard exists for this scheme
+                from ai_service.routers.apply_guide import _SCHEME_GUIDES
+                scheme_key_guess = (
+                    meta.get("name", "")
+                    .lower()
+                    .replace(" ", "")
+                    .replace("-", "")
+                )
+                # Try to match against known keys
+                guide_key = None
+                for k in _SCHEME_GUIDES:
+                    if k in scheme_key_guess or scheme_key_guess.startswith(k[:5]):
+                        guide_key = k
+                        break
+
+                apply_guide_url = (
+                    f"/apply/guide?scheme_key={guide_key}&state={profile.state or ''}"
+                    if guide_key else None
+                )
+
                 suggestions.append(SchemeSuggestion(
                     name=meta.get("name", "Unknown Scheme"),
                     sector=meta.get("sector", ""),
@@ -189,6 +210,7 @@ async def _retrieve_schemes(profile: UserProfile) -> list[SchemeSuggestion]:
                     benefit=benefit_line[:200],
                     apply_url=meta.get("apply_url", ""),
                     eligibility_score=score,
+                    apply_guide_url=apply_guide_url,
                 ))
 
         # ── Re-rank: sort by eligibility score (highest first) ───────────────
