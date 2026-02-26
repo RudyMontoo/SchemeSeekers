@@ -3,13 +3,17 @@ Guided Application Wizard — Yojna Setu
 ========================================
 When a user is found eligible for a scheme, instead of dumping them
 on a complex govt website, this router gives them a clear, step-by-step
-Hinglish guide:
+guide in their OWN language:
 
   1. What documents to bring (offline CSC mode)
   2. Nearest CSC locator link
   3. Scheme helpline number
   4. What ID the CSC will give them (to use in status tracker later)
   5. Expected time to receive benefit
+
+Multilingual: steps are auto-translated using Sarvam Mayura API
+based on the user's state. Tamil users see Tamil, Bengali users see
+Bengali — not just Hinglish.
 
 Endpoints:
   GET /apply/guide     — full application guide for a scheme
@@ -23,6 +27,9 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/apply", tags=["Application Guide"])
+
+# In-memory translation cache: (scheme_key, lang_code) → translated fields
+_translation_cache: dict[tuple, dict] = {}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -358,30 +365,32 @@ _SCHEME_GUIDES: dict[str, dict] = {
 
 class ApplicationStep(BaseModel):
     step_no: int
-    instruction_hi: str   # Simple Hinglish instruction
+    instruction: str   # Translated instruction in user's language
 
 
 class ApplicationGuide(BaseModel):
     scheme_key: str
     scheme_name: str
     scheme_name_hi: str
-    benefit_hi: str                          # What benefit they'll get
-    application_mode: str                    # online | offline_csc | offline_bank | hybrid
-    difficulty: str                          # easy | medium | hard
+    benefit: str                             # Benefit text in user's language
+    application_mode: str
+    difficulty: str
     time_to_apply: str
     helpline: str
     helpline_hours: str
     official_portal: str
     apply_url: str
-    documents_needed: list[str]
+    language_code: str                       # Language this guide is in (e.g. 'ta-IN')
+    language_name: str                       # Human-readable (e.g. 'Tamil')
+    documents_needed: list[str]              # Translated document names
     steps: list[ApplicationStep]
-    tracking_id_type: str                    # What ID to save after applying
-    tracking_id_hint: str                    # How to use it in status tracker
-    tracking_scheme_key: Optional[str]       # Key to use in /status/check
-    status_tracker_url: Optional[str]        # Direct link: /status/check with pre-filled key
-    csc_locator_hint: str                    # Hinglish prompt to find CSC
+    tracking_id_type: str
+    tracking_id_hint: str
+    tracking_scheme_key: Optional[str]
+    status_tracker_url: Optional[str]
+    csc_locator_hint: str
     expected_benefit_time: str
-    important_note_hi: Optional[str] = None
+    important_note: Optional[str] = None
 
 
 class SchemeSummary(BaseModel):
@@ -408,20 +417,83 @@ _MODE_LABELS = {
     "hybrid":       "Online ya CSC dono se ho sakta hai",
 }
 
+_LANG_NAMES = {
+    "hi-IN": "Hindi", "ta-IN": "Tamil", "te-IN": "Telugu",
+    "bn-IN": "Bengali", "mr-IN": "Marathi", "kn-IN": "Kannada",
+    "ml-IN": "Malayalam", "gu-IN": "Gujarati", "pa-IN": "Punjabi",
+    "or-IN": "Odia", "en-IN": "English",
+}
+
+
+def _translate_guide(guide: dict, lang_code: str) -> dict:
+    """
+    Translate all user-facing text in a guide to the given language.
+    Uses Sarvam Mayura. Results are cached in-memory per (scheme, lang).
+    Falls back to Hinglish on any error.
+    """
+    if lang_code == "hi-IN":
+        # Already in Hindi/Hinglish — no translation needed
+        return {
+            "benefit":              guide["benefit_hi"],
+            "steps":                guide["csc_steps_hi"],
+            "documents":            guide["documents_for_csc"],
+            "tracking_hint":        guide["tracking_id_hint"],
+            "csc_hint":             "Nazdiki CSC dundhne ke liye app mein 'CSC Locator' kholen. Apna location share karein.",
+            "expected_benefit":     guide["expected_benefit_time"],
+            "important_note":       guide.get("important_note_hi"),
+        }
+
+    try:
+        from ai_service.utils.sarvam import sarvam_translate, SARVAM_API_KEY
+        if not SARVAM_API_KEY:
+            raise ValueError("No SARVAM_API_KEY")
+
+        def tr(text: str) -> str:
+            """Translate a single string hi-IN → target language."""
+            if not text:
+                return text
+            return sarvam_translate(text, source_language="hi-IN", target_language=lang_code)
+
+        # Translate each step individually for accuracy
+        translated_steps = [tr(s) for s in guide["csc_steps_hi"]]
+        translated_docs   = [tr(d) for d in guide["documents_for_csc"]]
+
+        return {
+            "benefit":          tr(guide["benefit_hi"]),
+            "steps":            translated_steps,
+            "documents":        translated_docs,
+            "tracking_hint":    tr(guide["tracking_id_hint"]),
+            "csc_hint":         tr("Nazdiki CSC dundhne ke liye app mein 'CSC Locator' kholen. Apna location share karein."),
+            "expected_benefit": tr(guide["expected_benefit_time"]),
+            "important_note":   tr(guide["important_note_hi"]) if guide.get("important_note_hi") else None,
+        }
+
+    except Exception as e:
+        logger.warning(f"Translation to {lang_code} failed: {e} — falling back to Hinglish")
+        return {
+            "benefit":          guide["benefit_hi"],
+            "steps":            guide["csc_steps_hi"],
+            "documents":        guide["documents_for_csc"],
+            "tracking_hint":    guide["tracking_id_hint"],
+            "csc_hint":         "Nazdiki CSC dundhne ke liye app mein 'CSC Locator' kholen. Apna location share karein.",
+            "expected_benefit": guide["expected_benefit_time"],
+            "important_note":   guide.get("important_note_hi"),
+        }
+
 
 @router.get("/guide", response_model=ApplicationGuide)
 async def get_application_guide(
     scheme_key: str = Query(..., description=f"Scheme key. Supported: {', '.join(_SUPPORTED_SCHEMES)}"),
-    state: Optional[str] = Query(None, description="User's state — used to personalise CSC locator link"),
+    state: Optional[str] = Query(None, description="User's state — auto-selects language (e.g. 'Tamil Nadu' → Tamil)"),
+    language: Optional[str] = Query(None, description="Override language code (e.g. 'ta-IN', 'bn-IN'). Overrides state."),
 ):
     """
-    Get a step-by-step Hinglish application guide for a government scheme.
+    Get a step-by-step application guide for a government scheme.
 
-    Instead of sending users to complex govt websites, this returns:
-    - What documents to bring
-    - Steps in simple Hinglish
-    - What ID the CSC/bank gives (to use in /status/check later)
-    - Helpline number if stuck
+    Guide is returned in the user's regional language:
+    - Tamil Nadu → Tamil, West Bengal → Bengali, Maharashtra → Marathi, etc.
+    - Hinglish fallback if Sarvam API is unavailable.
+    - Pass ?language=ta-IN to override language explicitly.
     """
     key = scheme_key.lower().strip()
     if key not in _SCHEME_GUIDES:
@@ -432,22 +504,28 @@ async def get_application_guide(
 
     guide = _SCHEME_GUIDES[key]
 
-    # Build steps list
+    # ── Determine target language code ────────────────────────────────────────
+    if language:
+        lang_code = language  # explicit override
+    elif state:
+        from ai_service.utils.sarvam import get_language_for_state, get_sarvam_lang_code
+        lang_code = get_sarvam_lang_code(get_language_for_state(state))
+    else:
+        lang_code = "hi-IN"
+
+    # ── Translate (with cache) ───────────────────────────────────────────────
+    cache_key = (key, lang_code)
+    if cache_key not in _translation_cache:
+        _translation_cache[cache_key] = _translate_guide(guide, lang_code)
+    translated = _translation_cache[cache_key]
+
+    # ── Build steps ──────────────────────────────────────────────────────────
     steps = [
-        ApplicationStep(step_no=i + 1, instruction_hi=step)
-        for i, step in enumerate(guide["csc_steps_hi"])
+        ApplicationStep(step_no=i + 1, instruction=step)
+        for i, step in enumerate(translated["steps"])
     ]
 
-    # Build CSC locator link with state hint
-    csc_params = f"lat={{lat}}&lon={{lon}}"
-    if state:
-        csc_params += f"&state={state}"
-    csc_locator_hint = (
-        f"Nazdiki CSC dundhne ke liye app mein 'CSC Locator' kholen. "
-        f"Apna location share karein — hum sabse nazdiki CSC centre batayenge."
-    )
-
-    # Build status tracker URL if tracking is supported
+    # ── Status tracker URL ───────────────────────────────────────────────────
     status_tracker_url = None
     if guide.get("tracking_scheme_key"):
         status_tracker_url = f"/status/check (scheme_key={guide['tracking_scheme_key']})"
@@ -456,7 +534,7 @@ async def get_application_guide(
         scheme_key=key,
         scheme_name=guide["name"],
         scheme_name_hi=guide["name_hi"],
-        benefit_hi=guide["benefit_hi"],
+        benefit=translated["benefit"],
         application_mode=guide["application_mode"],
         difficulty=guide["difficulty"],
         time_to_apply=guide["time_to_apply"],
@@ -464,15 +542,17 @@ async def get_application_guide(
         helpline_hours=guide["helpline_hours"],
         official_portal=guide["official_portal"],
         apply_url=guide["apply_url"],
-        documents_needed=guide["documents_for_csc"],
+        language_code=lang_code,
+        language_name=_LANG_NAMES.get(lang_code, lang_code),
+        documents_needed=translated["documents"],
         steps=steps,
         tracking_id_type=guide["tracking_id_type"],
-        tracking_id_hint=guide["tracking_id_hint"],
+        tracking_id_hint=translated["tracking_hint"],
         tracking_scheme_key=guide.get("tracking_scheme_key"),
         status_tracker_url=status_tracker_url,
-        csc_locator_hint=csc_locator_hint,
-        expected_benefit_time=guide["expected_benefit_time"],
-        important_note_hi=guide.get("important_note_hi"),
+        csc_locator_hint=translated["csc_hint"],
+        expected_benefit_time=translated["expected_benefit"],
+        important_note=translated["important_note"],
     )
 
 
