@@ -65,13 +65,17 @@ Spring Boot acts as a gateway — it forwards these to FastAPI on `localhost:800
 
 | Spring Boot Route | Forwards To (FastAPI) | Description |
 |---|---|---|
-| `POST /api/chat` | `POST /chat/` | Hinglish chatbot |
+| `POST /api/chat` | `POST /chat/` | Hinglish chatbot (with memory) |
+| `POST /api/chat/stream` | `POST /chat/stream` | **NEW** — Streaming chatbot |
+| `DELETE /api/chat/session/{id}` | `DELETE /chat/session/{id}` | **NEW** — Clear session memory |
 | `POST /api/agent/start` | `POST /agent/start` | Start interview |
 | `POST /api/agent/answer` | `POST /agent/answer` | Submit answer |
+| `GET /api/agent/checklist` | `GET /agent/checklist` | **NEW** — Document requirements per scheme |
 | `POST /api/voice/transcribe` | `POST /voice/transcribe` | Whisper STT |
 | `POST /api/voice/conversation/start` | `POST /voice/conversation/start` | Voice agent |
 | `POST /api/voice/conversation/answer` | `POST /voice/conversation/answer` | Voice agent answer |
 | `POST /api/status/check` | `POST /status/check` | Live status tracker |
+| `GET /api/health` | `GET /health` | Rich diagnostic — ChromaDB, API keys, sessions |
 
 > **Why proxy through Spring Boot?**
 > So the frontend only needs one base URL. Spring Boot adds JWT auth checks before forwarding.

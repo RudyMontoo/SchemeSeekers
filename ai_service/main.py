@@ -40,12 +40,14 @@ from ai_service.routers.status_tracker import router as status_router
 from ai_service.routers.agent_router import router as agent_router
 from ai_service.routers.voice import router as voice_router
 from ai_service.routers.voice_conversation import router as voice_conv_router
+from ai_service.routers.help_discovery import router as help_router
 
 app.include_router(chat_router)
 app.include_router(status_router, prefix="/status")
 app.include_router(agent_router)
 app.include_router(voice_router)
 app.include_router(voice_conv_router)
+app.include_router(help_router)
 
 # ── Root ───────────────────────────────────────────────────────────────────────
 @app.get("/")
@@ -58,6 +60,8 @@ async def root():
             "agent":          "/agent/start + /agent/answer — Adaptive interview",
             "voice":          "/voice/transcribe + /voice/query — Whisper STT",
             "status_tracker": "/status/check — Live scheme application status",
+            "help_csc":       "/help/csc/nearby — CSC Centre locator (OpenStreetMap)",
+            "help_doc":       "/help/doc/guide — Document help guide (YouTube + portal)",
             "docs":           "/docs",
         }
     }
@@ -78,8 +82,8 @@ async def health():
             "healthy": chroma_count > 0,
         },
         "api_keys": {
-            "gemini":  bool(os.getenv("GEMINI_API_KEY")),
-            "sarvam":  bool(os.getenv("SARVAM_API_KEY")),
+            "groq":    bool(os.getenv("GROQ_API_KEY")),
+            "sarvam": bool(os.getenv("SARVAM_API_KEY")),
         },
         "voice": {
             "whisper_model": os.getenv("WHISPER_MODEL", "base"),

@@ -138,11 +138,11 @@ check("Eligibility scoring", check_eligibility_score)
 
 
 # ── 4. RAG Chain ─────────────────────────────────────────────────────────────
-print("\n🔗 4. RAG Chain (requires GEMINI_API_KEY)")
+print("\n🔗 4. RAG Chain (requires GROQ_API_KEY)")
 
-gemini_key = os.getenv("GEMINI_API_KEY")
-if not gemini_key:
-    print(f"  {WARN}  GEMINI_API_KEY not set — skipping LLM tests")
+groq_key = os.getenv("GROQ_API_KEY")
+if not groq_key or groq_key == "your_groq_api_key_here":
+    print(f"  {WARN}  GROQ_API_KEY not set — skipping LLM tests")
 else:
     from ai_service.rag_chain import build_rag_chain, invoke_with_memory, get_chromadb_count
 
@@ -164,20 +164,63 @@ else:
         reply2 = invoke_with_memory(chain, "what schemes am I eligible for?", session_id="test-mem")
         return f"Memory reply: {reply2[:80]}..."
 
-    import time
-    check("Basic RAG reply", check_rag_basic)
-    print("  ⏳ Waiting 15s to avoid rate limit...")
-    time.sleep(15)
+    check("Basic RAG reply (Groq)", check_rag_basic)
     check("No-match guard", check_rag_no_match)
-    print("  ⏳ Waiting 15s to avoid rate limit...")
-    time.sleep(15)
     check("Conversation memory", check_rag_memory)
 
 
-# ── 5. API Key Summary ────────────────────────────────────────────────────────
+# ── 5. API Key Status ────────────────────────────────────────────────────────
 print("\n🔑 5. API Key Status")
-print(f"  {'✅' if os.getenv('GEMINI_API_KEY') else '❌'} GEMINI_API_KEY")
+print(f"  {'✅' if os.getenv('GROQ_API_KEY') and os.getenv('GROQ_API_KEY') != 'your_groq_api_key_here' else '❌'} GROQ_API_KEY")
 print(f"  {'✅' if os.getenv('SARVAM_API_KEY') else WARN} SARVAM_API_KEY (optional — falls back to gTTS/Whisper)")
+
+
+# ── 6. Help & Discovery ───────────────────────────────────────────────────────
+print("\n🗺️  6. Help & Discovery")
+from ai_service.routers.help_discovery import (
+    _DOC_GUIDES, _fallback_centres, _haversine_km, _SUPPORTED_DOCS
+)
+
+def check_doc_guide_income():
+    guide = _DOC_GUIDES["income_certificate"]
+    assert "youtube_url" in guide,       "Missing youtube_url"
+    assert "official_portal" in guide,   "Missing official_portal"
+    assert "how_to_get" in guide,        "Missing how_to_get"
+    assert len(guide["documents_needed"]) > 0, "No documents_needed"
+    return f"income_certificate → portal={guide['official_portal']}"
+
+def check_doc_guide_all_keys():
+    missing = [k for k in _SUPPORTED_DOCS if k not in _DOC_GUIDES]
+    assert not missing, f"Missing guide entries for: {missing}"
+    return f"{len(_SUPPORTED_DOCS)} document types all have valid guide data"
+
+def check_csc_fallback_delhi():
+    centres = _fallback_centres(28.6139, 77.2090, state="Delhi", radius_km=50)
+    assert len(centres) > 0, "No fallback results for Delhi"
+    for c in centres:
+        assert c.distance_km >= 0,    "Negative distance"
+        assert c.osm_maps_url.startswith("https://"), "Bad OSM URL"
+        assert len(c.services) > 0,   "No services listed"
+    return f"{len(centres)} CSC centres found for Delhi (closest: {centres[0].name}, {centres[0].distance_km} km)"
+
+def check_csc_haversine():
+    # Mumbai to Pune is ~120 km
+    dist = _haversine_km(19.0759, 72.8776, 18.5204, 73.8567)
+    assert 110 < dist < 130, f"Expected ~120 km Mumbai-Pune, got {dist:.1f}"
+    return f"Haversine Mumbai→Pune: {dist:.1f} km ✓"
+
+def check_csc_fallback_no_state():
+    # Without a state, should return closest from national pool
+    centres = _fallback_centres(26.8467, 80.9462, state=None, radius_km=5)
+    # Lucknow is in pool — should match
+    assert len(centres) > 0, "Expected at least 1 result near Lucknow"
+    return f"National pool fallback: {centres[0].name}"
+
+check("doc guide — income_certificate data valid",   check_doc_guide_income)
+check("doc guide — all document types present",      check_doc_guide_all_keys)
+check("CSC fallback — Delhi (known seed data)",      check_csc_fallback_delhi)
+check("CSC haversine distance calculation",          check_csc_haversine)
+check("CSC fallback — no state given (national pool)", check_csc_fallback_no_state)
 
 
 # ── Summary ───────────────────────────────────────────────────────────────────

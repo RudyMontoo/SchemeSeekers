@@ -162,7 +162,10 @@ async def voice_answer(
     if not session:
         raise HTTPException(404, "Session not found. Call /voice/conversation/start first.")
 
-    # Step 1: Transcribe
+    # Step 1: Get profile (must be before any early returns that reference it)
+    profile = session["profile"]
+
+    # Step 2: Transcribe
     transcript = await _transcribe_upload(audio)
     logger.info(f"Transcribed: '{transcript}'")
 
@@ -179,8 +182,6 @@ async def voice_answer(
                 "X-Progress": "0",
             }
         )
-
-    profile = session["profile"]
 
     # Step 2: Parse answer
     current_q = get_next_question(profile)

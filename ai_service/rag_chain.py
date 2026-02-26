@@ -1,6 +1,6 @@
 """
 RAG Chain — Yojna Setu
-LangChain retrieval chain using ChromaDB + Google Gemini
+LangChain retrieval chain using ChromaDB + Groq (Llama 3.3 70B)
 
 Improvements:
   - Per-session conversation memory (ConversationBufferMemory)
@@ -17,7 +17,7 @@ load_dotenv(dotenv_path=_env_path, override=True)
 import chromadb
 from chromadb.utils import embedding_functions
 
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
@@ -28,7 +28,7 @@ CHROMA_DIR   = Path(__file__).parent / "chroma_db"
 COLLECTION   = "yojna_setu_schemes"
 EMBED_MODEL  = "all-MiniLM-L6-v2"
 TOP_K        = 5
-GEMINI_MODEL = "gemini-2.0-flash"
+GROQ_MODEL   = "llama-3.3-70b-versatile"   # free on Groq, very capable
 
 # ── Per-session memory store ──────────────────────────────────────────────────
 # { session_id: InMemoryChatMessageHistory }
@@ -113,9 +113,9 @@ def clear_memory(session_id: str):
 
 # ── Build RAG chain (stateless — memory injected per call) ────────────────────
 def build_rag_chain():
-    llm = ChatGoogleGenerativeAI(
-        model=GEMINI_MODEL,
-        google_api_key=os.getenv("GEMINI_API_KEY"),
+    llm = ChatGroq(
+        model=GROQ_MODEL,
+        api_key=os.getenv("GROQ_API_KEY"),
         temperature=0.3,
     )
     retriever = get_retriever()
