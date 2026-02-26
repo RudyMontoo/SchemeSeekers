@@ -124,7 +124,7 @@ _SCHEME_GUIDES: dict[str, dict] = {
             "Parivar ke sabhi members ki list (jitne log kaam karenge)",
         ],
         "csc_steps_hi": [
-            "Gram Panchayat office jayein (MGNREGA ke liye Gram Panchayat hi sahi jagah hai)",
+            "Gram Panchayat office jayein — yahi sahi jagah hai MGNREGA ke liye",
             "Job Card ke liye application form maangein",
             "Form bharen — apne parivar ke sabhi members ke naam likhein",
             "Aadhaar aur photo attach karein",
@@ -425,6 +425,20 @@ _LANG_NAMES = {
 }
 
 
+import re as _re
+
+def _clean_for_translation(text: str) -> str:
+    """
+    Simplify text before sending to Sarvam Mayura.
+    Parenthetical clauses often confuse the model into producing question forms.
+    We strip them or convert to a dash-separated clause instead.
+    """
+    # Remove content inside parentheses entirely if it's a long clause
+    cleaned = _re.sub(r'\(([^)]{30,})\)', '', text)  # drop long parentheticals
+    cleaned = _re.sub(r'\s{2,}', ' ', cleaned).strip()   # normalise whitespace
+    return cleaned or text   # fallback to original if result is empty
+
+
 def _translate_guide(guide: dict, lang_code: str) -> dict:
     """
     Translate all user-facing text in a guide to the given language.
@@ -449,10 +463,17 @@ def _translate_guide(guide: dict, lang_code: str) -> dict:
             raise ValueError("No SARVAM_API_KEY")
 
         def tr(text: str) -> str:
-            """Translate a single string hi-IN → target language."""
+            """Clean + translate a single string hi-IN → target language."""
             if not text:
                 return text
-            return sarvam_translate(text, source_language="hi-IN", target_language=lang_code)
+            clean = _clean_for_translation(text)
+            return sarvam_translate(
+                clean,
+                source_language="hi-IN",
+                target_language=lang_code,
+                # Note: 'colloquial' mode is not supported by Sarvam Mayura v1
+                # The cleaned source text + formal mode gives correct imperative output
+            )
 
         # Translate each step individually for accuracy
         translated_steps = [tr(s) for s in guide["csc_steps_hi"]]

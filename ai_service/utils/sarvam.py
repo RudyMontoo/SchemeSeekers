@@ -231,6 +231,7 @@ def sarvam_translate(
     text: str,
     source_language: str = "en-IN",
     target_language: str = "hi-IN",
+    mode: str = "formal",   # "formal" | "colloquial" | "modern-colloquial"
 ) -> str:
     """
     Translate text between Indian languages using Sarvam Mayura.
@@ -257,7 +258,7 @@ def sarvam_translate(
         "source_language_code": source_language,
         "target_language_code": target_language,
         "speaker_gender": "Female",
-        "mode": "formal",
+        "mode": mode,
         "model": "mayura:v1",
         "enable_preprocessing": True,
     }
