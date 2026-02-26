@@ -53,6 +53,15 @@
 - **Volatile RAM Processing** — document images never written to disk
 - **Automatic PII Masking** — OpenCV + regex detects and blurs Aadhaar/PAN before AI sees the data
 
+### 7. 🆕 Guided Application Wizard (Multilingual)
+- **Zero-Complexity Apply Flow** — step-by-step instructions in the user's **own language**, not a complex govt URL
+- **Auto Language Detection** — `?state=Tamil Nadu` → Tamil, `?state=West Bengal` → Bengali, `?language=mr-IN` → Marathi
+- **Powered by Sarvam Mayura** — translates every step, document name, hint, and note into the user's regional script
+- **Offline CSC Mode** — *"Go to CSC with these 4 documents"* + exact helpline + hours
+- **Tracking ID Guide** — tells what ID the CSC gives (Aadhaar / Registration No. / Job Card) for use in Status Tracker
+- **In-Memory Cache** — same scheme+language never translated twice
+- **10 Schemes** — PM Kisan, PMAY-G, MGNREGA, Ayushman, NSP, Ujjwala, Jan Dhan, PMMVY, Mudra, Fasal Bima
+
 ---
 
 ## 🛠️ Tech Stack
@@ -65,8 +74,10 @@ React.js Website (Frontend)
         ▼
 Spring Boot API Gateway (Java 17)
         │
-        ├──► FastAPI AI Hub (Python)    ← LangChain + ChromaDB + Whisper + Gemini
-        │         └──► Status Tracker  ← BeautifulSoup scrapers for 6 government portals
+        ├──► FastAPI AI Hub (Python)    ← Groq Llama 3.3 70B + ChromaDB + Sarvam AI
+        │         ├──► Status Tracker  ← BeautifulSoup scrapers for 6 government portals
+        │         ├──► Apply Wizard    ← Sarvam Mayura multilingual guides
+        │         └──► Help & Discover ← OpenStreetMap + YouTube Data API v3
         │
         └──► Flask OCR Worker (Python)  ← PaddleOCR + OpenCV
 ```
@@ -85,9 +96,13 @@ Spring Boot API Gateway (Java 17)
 | Framework | FastAPI (Python) |
 | Agent | LangChain ConversationChain |
 | Vector DB | ChromaDB |
-| LLM | Google Gemini / GPT-4o |
-| Voice | OpenAI Whisper (Hinglish STT) |
+| LLM | **Groq (Llama 3.3 70B)** — free, fast |
+| Voice STT | **Sarvam Saarika v2** (22 Indian languages) + Whisper fallback |
+| Voice TTS | **Sarvam Bulbul v3** (11 Indian languages, 30+ voices) |
+| Translation | **Sarvam Mayura** — Hinglish → Tamil/Bengali/Marathi etc. |
 | **Status Tracker** | **BeautifulSoup4 + Requests (live portal scraping)** |
+| **Apply Wizard** | **Sarvam Mayura multilingual step-by-step guides** |
+| **Help & Discovery** | **OpenStreetMap Overpass API + YouTube Data API v3** |
 
 ### 3. OCR & Image Worker
 | Component | Technology |

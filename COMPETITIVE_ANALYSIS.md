@@ -59,7 +59,9 @@
 | OCR document scanner | ❌ | ❌ | ❌ | ✅ |
 | Live scheme status tracker | ❌ | Partial | ❌ | ✅ |
 | CSC centre locator (GPS) | ❌ | ❌ | ❌ | ✅ |
-| Multilingual (12+ Indian languages) | ❌ | Partial | ❌ | ✅ (Sarvam AI) |
+| Guided Apply Wizard (Offline CSC steps) | ❌ | ❌ | ❌ | ✅ |
+| Multilingual wizard (Tamil/Bengali/Marathi…) | ❌ | ❌ | ❌ | ✅ (Sarvam Mayura) |
+| Multilingual voice (12+ Indian languages) | ❌ | Partial | ❌ | ✅ (Sarvam AI) |
 | PII masking / privacy-first | ❌ | ❌ | ❌ | ✅ |
 | Document help guide + YouTube tutorials | ❌ | ❌ | ❌ | ✅ |
 | Works for low-literacy users | ❌ | ❌ | ❌ | ✅ |
@@ -110,4 +112,16 @@ A rural Indian citizen who:
 
 ---
 
-> **In summary:** No existing Indian app combines AI-powered eligibility matching + voice-first interaction + OCR + multilingual support + CSC locator in a single product aimed at rural, low-literacy users. **Yojna Setu is the first.**
+> **In summary:** No existing Indian app combines AI-powered eligibility matching + voice-first interaction + OCR + multilingual support + CSC locator + guided offline apply wizard in a single product aimed at rural, low-literacy users. **Yojna Setu is the first.**
+
+---
+
+## 🤖 AI/Language Stack
+
+| Layer | Technology | Languages Supported |
+|---|---|---|
+| LLM (RAG Chat) | Groq Llama 3.3 70B | Hinglish |
+| STT (Voice input) | Sarvam Saarika v2 | 22 Indian languages |
+| TTS (Voice output) | Sarvam Bulbul v3 | 11 Indian languages, 30+ voices |
+| Translation | Sarvam Mayura | hi↔ta, hi↔bn, hi↔mr, hi↔te, hi↔kn, hi↔ml, hi↔gu, hi↔pa, hi↔or |
+| Apply Guide | Sarvam Mayura | Guides delivered in user's script (Tamil, Bengali, Marathi…) |
