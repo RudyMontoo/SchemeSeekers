@@ -33,7 +33,9 @@ class ChatRequest(BaseModel):
     language: Optional[str] = "hinglish"
 
 class SchemeMatch(BaseModel):
+    id: str
     name: str
+    benefit: str
     sector: str
     state: str
     apply_url: str
@@ -59,6 +61,12 @@ def build_filters(state: Optional[str], sector: Optional[str]) -> Optional[dict]
     return None
 
 
+def _make_slug(name: str) -> str:
+    """Convert scheme name to a URL-safe slug."""
+    import re
+    return re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+
+
 def fetch_matched_schemes(query: str, filters: Optional[dict]) -> list[SchemeMatch]:
     """Query ChromaDB directly for structured scheme metadata."""
     try:
@@ -78,16 +86,20 @@ def fetch_matched_schemes(query: str, filters: Optional[dict]) -> list[SchemeMat
         )
         matched = []
         for meta in (results.get("metadatas") or [[]])[0]:
+            name = meta.get("name", "")
             matched.append(SchemeMatch(
-                name=meta.get("name", ""),
+                id=_make_slug(name) or "scheme",
+                name=name,
+                benefit=meta.get("benefit", meta.get("description", "Sarkari yojana ka labh")[:120]),
                 sector=meta.get("sector", ""),
                 state=meta.get("state", "Central"),
-                apply_url=meta.get("apply_url", ""),
+                apply_url=meta.get("apply_url", "https://india.gov.in"),
             ))
         return matched
     except Exception as e:
         logger.warning(f"Scheme metadata fetch failed: {e}")
         return []
+
 
 
 # ── Standard chat route (with memory) ─────────────────────────────────────────

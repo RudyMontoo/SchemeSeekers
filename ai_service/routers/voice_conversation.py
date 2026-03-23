@@ -25,6 +25,12 @@ router = APIRouter(prefix="/voice/conversation", tags=["voice_agent"])
 SUPPORTED_FORMATS = {".wav", ".mp3", ".m4a", ".ogg", ".webm", ".flac"}
 MAX_FILE_MB = 25
 
+
+def safe_header(value: str, max_len: int = 200) -> str:
+    """URL-encode non-ASCII chars so they fit in latin-1 HTTP headers."""
+    from urllib.parse import quote
+    return quote(str(value)[:max_len], safe=" ,|.-_")
+
 # ── Welcome message variants ──────────────────────────────────────────────────
 WELCOME_TEXT_HI = (
     "Namaskar! Main Yojna Sathi hun. "
@@ -50,10 +56,10 @@ def _speak(text: str, state: str = None) -> bytes:
     return text_to_speech(text, lang='hi')
 
 
-async def _transcribe_upload(file: UploadFile, state: str = None) -> str:
+async def _transcribe_upload(file: UploadFile, state: str = None, language: str = None) -> str:
     """
     Transcribe audio. Uses Sarvam Saarika v2 if API key set, else Whisper.
-    Sarvam auto-detects Indian language — no need to specify.
+    Derives language hint from `language` param (e.g. 'hi') or `state` (e.g. 'Uttar Pradesh').
     """
     import os as _os
     suffix = Path(file.filename or "audio.wav").suffix.lower()
@@ -63,14 +69,27 @@ async def _transcribe_upload(file: UploadFile, state: str = None) -> str:
     if len(content) / (1024 * 1024) > MAX_FILE_MB:
         raise HTTPException(400, "Audio too large (max 25MB)")
 
-    from ai_service.utils.sarvam import SARVAM_API_KEY, sarvam_transcribe
+    from ai_service.utils.sarvam import (
+        SARVAM_API_KEY, sarvam_transcribe,
+        get_language_for_state, get_sarvam_lang_code
+    )
+
+    # Resolve language code: explicit > state-derived > default hi-IN
+    if language:
+        lang_code = get_sarvam_lang_code(language)   # e.g. "hi" → "hi-IN"
+    else:
+        lang = get_language_for_state(state)          # e.g. "UP" → "hi"
+        lang_code = get_sarvam_lang_code(lang)        # → "hi-IN"
+    logger.info(f"STT language hint: {lang_code} (state={state}, language={language})")
+
     if SARVAM_API_KEY:
         logger.info("STT via Sarvam Saarika v2")
-        result = sarvam_transcribe(content, audio_format=suffix.lstrip("."))
+        result = sarvam_transcribe(content, audio_format=suffix.lstrip("."), language_code=lang_code)
         return result["transcript"]
 
-    # Fallback: Whisper
+    # Fallback: Whisper — pass explicit language to avoid misdetection
     import tempfile, whisper
+    whisper_lang = language or get_language_for_state(state)  # e.g. "hi"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(content)
         tmp_path = tmp.name
@@ -79,6 +98,7 @@ async def _transcribe_upload(file: UploadFile, state: str = None) -> str:
         model = whisper.load_model(model_size)
         result = model.transcribe(
             tmp_path,
+            language=whisper_lang,  # explicit Hindi hint prevents misdetection
             initial_prompt="Hindi-English Hinglish sarkari yojana conversation.",
             fp16=False
         )
@@ -144,6 +164,7 @@ async def voice_start_session():
 async def voice_answer(
     audio: UploadFile = File(..., description="User's spoken answer (WAV/MP3/M4A)"),
     session_id: str = Form(..., description="Session ID from /start"),
+    language: Optional[str] = Form(default=None, description="Language hint e.g. 'hi', 'ta'"),
 ):
     """
     Submit voice answer → get voice response (next question or final schemes).
@@ -160,14 +181,19 @@ async def voice_answer(
 
     session = _sessions.get(session_id)
     if not session:
-        raise HTTPException(404, "Session not found. Call /voice/conversation/start first.")
+        # Graceful recovery if server reloaded and wiped memory
+        from ai_service.agent.yojna_sathi import UserProfile
+        logger.warning(f"Session {session_id} not found. Re-initializing empty profile.")
+        profile = UserProfile()
+        _sessions[session_id] = {"profile": profile, "question_idx": 0}
+        session = _sessions[session_id]
 
     # Step 1: Get profile (must be before any early returns that reference it)
     profile = session["profile"]
 
-    # Step 2: Transcribe
-    transcript = await _transcribe_upload(audio)
-    logger.info(f"Transcribed: '{transcript}'")
+    # Step 2: Transcribe — pass language hint so Sarvam/Whisper don't misdetect
+    transcript = await _transcribe_upload(audio, state=profile.state, language=language)
+    logger.info(f"Transcribed: '{transcript}' (lang={language}, state={profile.state})")
 
     if not transcript or len(transcript.strip()) < 2:
         repeat_text = "Maafi kijiye, clearly nahi suna. Kripya dobara bolein."
@@ -177,7 +203,7 @@ async def voice_answer(
             media_type="audio/mpeg",
             headers={
                 "X-Session-Id": session_id,
-                "X-Transcript": "(unclear)",
+                "X-Transcript": safe_header("(unclear)"),
                 "X-Done": "false",
                 "X-Progress": "0",
             }
@@ -214,10 +240,10 @@ async def voice_answer(
             media_type="audio/mpeg",
             headers={
                 "X-Session-Id": session_id,
-                "X-Transcript": transcript[:200],
+                "X-Transcript": safe_header(transcript),
                 "X-Done": "true",
                 "X-Progress": "100",
-                "X-Schemes": scheme_names[:500],
+                "X-Schemes": safe_header(scheme_names),
                 "Content-Disposition": "inline; filename=schemes.mp3",
             }
         )
@@ -231,10 +257,10 @@ async def voice_answer(
         media_type="audio/mpeg",
         headers={
             "X-Session-Id": session_id,
-            "X-Transcript": transcript[:200],
+            "X-Transcript": safe_header(transcript),
             "X-Done": "false",
             "X-Progress": str(progress),
-            "X-Question-En": next_q["question_en"],
+            "X-Question-En": safe_header(next_q["question_en"]),
             "Content-Disposition": "inline; filename=question.mp3",
         }
     )
@@ -262,7 +288,7 @@ async def voice_chat_oneshot(
             state=state
         )
         return Response(content=audio_bytes, media_type="audio/mpeg",
-                        headers={"X-Transcript": "(unclear)"})
+                        headers={"X-Transcript": safe_header("(unclear)")})
 
     # Step 2: RAG retrieval
     try:
@@ -311,7 +337,7 @@ async def voice_chat_oneshot(
         content=audio_bytes,
         media_type="audio/mpeg",
         headers={
-            "X-Transcript": transcript[:200],
+            "X-Transcript": safe_header(transcript),
             "Content-Disposition": "inline; filename=reply.mp3",
         }
     )

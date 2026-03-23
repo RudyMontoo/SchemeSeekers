@@ -102,6 +102,44 @@ def get_sarvam_lang_code(lang: str) -> str:
     return SARVAM_LANGUAGES.get(lang, "hi-IN")
 
 
+# ── Audio format conversion helper ───────────────────────────────────────────
+# Sarvam saarika:v2 does NOT support webm. Convert it to wav via ffmpeg.
+_SARVAM_SUPPORTED = {"wav", "mp3", "m4a", "ogg", "flac", "aac"}
+
+def _convert_to_wav(audio_bytes: bytes, src_format: str) -> bytes:
+    """
+    Convert audio bytes from src_format → WAV using ffmpeg (subprocess).
+    Returns original bytes if conversion fails (caller will get a Sarvam 400
+    and can fall back to Whisper).
+    """
+    import subprocess, tempfile, os as _os
+    try:
+        with tempfile.NamedTemporaryFile(suffix=f".{src_format}", delete=False) as src_f:
+            src_f.write(audio_bytes)
+            src_path = src_f.name
+        out_path = src_path.replace(f".{src_format}", ".wav")
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", src_path, "-ar", "16000", "-ac", "1", out_path],
+            capture_output=True, timeout=30
+        )
+        if result.returncode == 0:
+            with open(out_path, "rb") as wf:
+                return wf.read()
+        else:
+            logger.warning(f"ffmpeg conversion failed: {result.stderr.decode()[:200]}")
+            return audio_bytes
+    except FileNotFoundError:
+        logger.warning("ffmpeg not found — sending original audio to Sarvam (may fail for webm)")
+        return audio_bytes
+    except Exception as e:
+        logger.warning(f"Audio conversion error: {e}")
+        return audio_bytes
+    finally:
+        for p in [src_path, out_path]:
+            try: _os.unlink(p)
+            except Exception: pass
+
+
 # ── Speech to Text (Saarika v2) ──────────────────────────────────────────────
 def sarvam_transcribe(
     audio_bytes: bytes,
@@ -129,31 +167,39 @@ def sarvam_transcribe(
     url = f"{SARVAM_BASE}/speech-to-text"
     headers = {"api-subscription-key": SARVAM_API_KEY}
 
+    # webm (recorded by browsers) is NOT supported by Sarvam — convert to wav
+    fmt = audio_format.lstrip(".").lower()
+    if fmt not in _SARVAM_SUPPORTED:
+        logger.info(f"Audio format '{fmt}' not supported by Sarvam. Converting to wav via ffmpeg...")
+        audio_bytes = _convert_to_wav(audio_bytes, fmt)
+        fmt = "wav"
+
     mime_map = {
         "wav":  "audio/wav",
         "mp3":  "audio/mpeg",
         "m4a":  "audio/x-m4a",
         "ogg":  "audio/ogg",
-        "webm": "audio/webm",
         "flac": "audio/flac",
         "aac":  "audio/aac",
     }
-    mime = mime_map.get(audio_format.lstrip(".").lower(), "audio/wav")
+    mime = mime_map.get(fmt, "audio/wav")
 
-    files = {"file": (f"audio.{audio_format}", io.BytesIO(audio_bytes), mime)}
+    files = {"file": (f"audio.{fmt}", io.BytesIO(audio_bytes), mime)}
 
     data = {
-        "model": "saarika:v2",
+        "model": "saarika:v2.5",
         "with_timestamps": False,
         "with_disfluencies": False,
     }
-    if language_code:
-        data["language_code"] = language_code
-    else:
-        data["language_code"] = "unknown"  # auto-detect
+    # Default to hi-IN (Hindi) for best results with Hinglish speakers.
+    # Using "unknown" causes Sarvam to randomly misdetect Indian accented speech.
+    data["language_code"] = language_code or "hi-IN"
 
+    logger.info(f"Sarvam STT request: fmt={fmt}, size={len(audio_bytes)} bytes, lang={data.get('language_code')}")
     resp = requests.post(url, headers=headers, files=files, data=data, timeout=30)
-    resp.raise_for_status()
+    if not resp.ok:
+        logger.error(f"Sarvam STT {resp.status_code} error: {resp.text[:500]}")
+        resp.raise_for_status()
     result = resp.json()
 
     return {
