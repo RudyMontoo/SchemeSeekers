@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, CheckCircle, XCircle, ExternalLink, MapPin, FileText } from 'lucide-react'
+import { ArrowLeft, CheckCircle, XCircle, ExternalLink, MapPin, FileText, Zap } from 'lucide-react'
 import { Navbar, BottomNav } from '../components/Navbar'
+import ApplyMethodModal from '../components/ApplyMethodModal'
 import '../components/components.css'
 import './SchemeDetailPage.css'
 
@@ -76,6 +77,7 @@ export default function SchemeDetailPage() {
     const navigate = useNavigate()
     const location = useLocation()
     const [activeTab, setActiveTab] = useState('Overview')
+    const [showApplyModal, setShowApplyModal] = useState(false)
 
     // Priority: router state (from chat/agent) > hardcoded dict > default
     const routeState = location.state  // passed by ChatPage navigate()
@@ -181,10 +183,10 @@ export default function SchemeDetailPage() {
                     {activeTab === 'How to Apply' && (
                         <div className="detail-apply-steps">
                             {[
-                                'Jan Seva Kendra (CSC) par jao ya official portal visit karo',
-                                'Application form bharein aur required documents den',
-                                'Form submit karein — aapko application ID milegi',
-                                '"Meri Applications" mein status track karein',
+                                'Visit Jan Seva Kendra (CSC) or the official portal',
+                                'Fill out the application form and provide required documents',
+                                'Submit the form — you will receive an Application ID',
+                                'Track status under "My Applications"',
                             ].map((step, i) => (
                                 <div key={i} className="detail-apply-step">
                                     <div className="detail-step-num">{i + 1}</div>
@@ -197,13 +199,21 @@ export default function SchemeDetailPage() {
 
                 {/* CTA Buttons */}
                 <div className="detail-ctas">
-                    <a href={scheme.applyUrl} target="_blank" rel="noreferrer" className="btn btn-primary btn-lg detail-cta-btn">
-                        Apply Now <ExternalLink size={16} />
-                    </a>
-                    <button className="btn btn-ghost btn-lg" onClick={() => navigate('/csc-finder')}>
-                        <MapPin size={16} /> Find Nearest CSC
+                    <button
+                        id="detail-apply-btn"
+                        className="btn btn-primary btn-lg detail-cta-btn"
+                        onClick={() => setShowApplyModal(true)}
+                    >
+                        <Zap size={16} /> Apply Now
+                    </button>
+                    <button className="btn btn-ghost btn-lg" onClick={() => navigate(`/helpers?scheme=${encodeURIComponent(scheme.name)}`)}>
+                        <MapPin size={16} /> Get Offline Help
                     </button>
                 </div>
+
+                {showApplyModal && (
+                    <ApplyMethodModal scheme={scheme} onClose={() => setShowApplyModal(false)} />
+                )}
 
             </main>
             <BottomNav />

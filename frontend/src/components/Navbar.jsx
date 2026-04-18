@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { Home, MessageCircle, FileText, Radio, User } from 'lucide-react'
+import { Home, MessageCircle, FileText, Radio, User, Camera } from 'lucide-react'
 import './Navbar.css'
 
 const NAV_ITEMS = [
@@ -7,6 +7,7 @@ const NAV_ITEMS = [
     { to: '/chat', label: 'Sathi', Icon: MessageCircle },
     { to: '/schemes', label: 'Schemes', Icon: FileText },
     { to: '/status', label: 'Status', Icon: Radio },
+    { to: '/scanner', label: 'Lens', Icon: Camera },
     { to: '/profile', label: 'Profile', Icon: User },
 ]
 

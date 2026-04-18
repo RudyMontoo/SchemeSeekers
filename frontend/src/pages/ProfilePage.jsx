@@ -334,7 +334,7 @@ export default function ProfilePage() {
                             <div>
                                 <h3 className="profile-section-title">Edit Profile</h3>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                    {[['name', 'Full Name', 'text', 'Aapka naam'],
+                                    {[['name', 'Full Name', 'text', 'Your full name'],
                                     ['state', 'State', 'text', 'Maharashtra'],
                                     ['district', 'District', 'text', 'Pune'],
                                     ['income', 'Annual Income', 'text', 'e.g. 1l-2.5l']

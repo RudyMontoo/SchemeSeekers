@@ -7,7 +7,7 @@ import './StatusPage.css'
 const ACTIVE_APP = {
     name: 'PM Awas Yojana',
     id: 'APP-2024-8812',
-    message: 'Aapka ghar ka 2nd installment process ho raha hai!',
+    message: 'Your 2nd installment for housing is being processed!', 
     stages: [
         { name: 'Registered', done: true, amount: null },
         { name: 'Aadhaar Verified', done: true, amount: null },
@@ -45,11 +45,11 @@ export default function StatusPage() {
 
                 {/* Search by ID */}
                 <div className="glass-card status-search-card">
-                    <p className="status-search-label">Application ID ya Aadhaar se check karein:</p>
+                    <p className="status-search-label">Check by Application ID or Aadhaar number:</p>
                     <div className="status-search-row">
                         <input
                             className="input-glass"
-                            placeholder="जैसे: APP-2024-XXXX या Aadhaar No."
+                            placeholder="e.g. APP-2024-XXXX or Aadhaar No."
                             value={appId}
                             onChange={e => setAppId(e.target.value)}
                         />
@@ -119,7 +119,7 @@ export default function StatusPage() {
                 </div>
 
                 <p className="status-sync-note text-subtle">
-                    <RefreshCw size={12} /> Govt portal se data fetch ho raha hai…
+                    <RefreshCw size={12} /> Fetching data from Government portal…
                 </p>
 
             </main>

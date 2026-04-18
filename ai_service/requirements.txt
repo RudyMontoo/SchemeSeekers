@@ -14,3 +14,12 @@ lxml>=5.0
 openai-whisper>=20231117
 pypdf>=4.0
 pillow>=10.0
+
+# ── OCR + Document Scanning ────────────────────────────────────────────────────
+paddlepaddle>=2.6.0         # PaddleOCR deep learning backend (CPU)
+paddleocr>=2.7.0            # PaddleOCR engine (supports Devanagari + regional scripts)
+opencv-python-headless>=4.9 # OpenCV without GUI — lighter, server-safe
+numpy>=1.24                 # Array ops (likely already transitive)
+python-multipart>=0.0.9     # FastAPI file upload (multipart/form-data)
+pdf2image>=1.17             # PDF → image (requires poppler system package)
+# Install poppler separately: sudo apt install poppler-utils

@@ -102,6 +102,13 @@ Hand-curated and verified across 19 sectors and 36 states/UTs.
 
 Sectors: Agriculture, Health, Education, Housing, Women & Child, SC/ST Welfare, Defence, Employment, Energy, Environment, Digital India, Sports, Fisheries, Tribal, Minority, Senior Citizens, Social Security, Rural Development, Financial Inclusion
 
+### 7. 📷 Jan-Sahayak Lens (OCR Document Scanner)
+A zero-retention, memory-only document scanner available via our custom React UI and natively integrated into the Sathi Chat.
+- **OpenCV Preprocessing**: Auto-deskew, document perspective warp, and adaptive thresholding for clear readability.
+- **CNN-Powered Extraction**: Text detection and character recognition driven by PaddleOCR's deep learning architecture.
+- **Privacy-First**: Extracts required ID constraints in volatile RAM. No images are written to disk.
+
+
 ---
 
 ## 🛠️ Tech Stack
@@ -222,6 +229,7 @@ API Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 | `POST` | `/voice/conversation/answer` | Voice answer → voice response |
 | `POST` | `/voice/conversation/chat` | One-shot voice query |
 | `POST` | `/status/check` | Live scheme application status |
+| `POST` | `/ocr/scan` | OpenCV + CNN document OCR (Zero-retention) |
 | `GET` | `/status/schemes` | List trackable schemes |
 | `GET` | `/health` | **Updated** — Rich diagnostic (ChromaDB count, API keys, sessions) |
 | `GET` | `/docs` | Swagger UI |
@@ -247,3 +255,5 @@ This project is built for social good. All government scheme data is sourced fro
 
 > *"Jan Jan ko Yojana se Jodo"* — Connect every citizen to their entitlements 🇮🇳
 # Test_Yojna_Setu
+
+# SchemeSeekers

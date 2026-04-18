@@ -43,6 +43,8 @@ from ai_service.routers.voice import router as voice_router
 from ai_service.routers.voice_conversation import router as voice_conv_router
 from ai_service.routers.help_discovery import router as help_router
 from ai_service.routers.apply_guide import router as apply_router
+from ai_service.routers.ocr_router import router as ocr_router
+from ai_service.routers.jan_sahayak import router as sahayak_router
 
 app.include_router(chat_router)
 app.include_router(status_router, prefix="/status")
@@ -51,6 +53,9 @@ app.include_router(voice_router)
 app.include_router(voice_conv_router)
 app.include_router(help_router)
 app.include_router(apply_router)
+app.include_router(ocr_router, prefix="/ocr")
+app.include_router(sahayak_router)
+
 
 # ── Root ───────────────────────────────────────────────────────────────────────
 @app.get("/")

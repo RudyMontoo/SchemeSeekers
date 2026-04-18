@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.time.LocalDateTime;
 
@@ -27,6 +28,7 @@ public class User {
     @Column(nullable = false)
     private String email;
 
+    @JsonIgnore
     @Column(nullable = false)
     private String passwordHash;
 
@@ -62,6 +64,7 @@ public class User {
     private LocalDateTime lastLoginAt;
 
     /** One-to-one relationship with UserProfile */
+    @JsonIgnore
     @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY, optional = true)
     private UserProfile profile;
 

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, User, Mail, Lock, Calendar } from 'lucide-react'
+import { ArrowRight, User, Mail, Lock, Calendar, UserPlus, ChevronRight } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import './SignInPage.css'
 
@@ -108,7 +108,7 @@ export default function SignInPage() {
                     Yojna<span className="text-saffron">Setu</span>
                 </h1>
                 <p className="signin-sub" style={{ textAlign: 'center', marginBottom: 12 }}>
-                    सरकारी योजनाएं — आपके लिए
+                    Government Schemes — For You
                 </p>
 
                 <div className="signin-tabs">
@@ -151,7 +151,7 @@ export default function SignInPage() {
                         <p className="signin-label">Full Name</p>
                         <div className="signin-input-row">
                             <span className="signin-prefix"><User size={15} /></span>
-                            <input type="text" placeholder="Aapka naam likhein" value={regName}
+                            <input type="text" placeholder="e.g. Rajesh Kumar" value={regName}
                                 onChange={e => setRegName(e.target.value)} className="input-glass signin-input" autoFocus />
                         </div>
                         <p className="signin-label" style={{ marginTop: 4 }}>Date of Birth</p>
@@ -185,6 +185,20 @@ export default function SignInPage() {
                     <span className="text-muted">— or —</span>
                     <button className="btn btn-ghost signin-skip" onClick={() => navigate('/home')}>Continue as Guest (Demo)</button>
                 </div>
+            </div>
+
+            {/* ── Jan Sahayak CTA ── */}
+            <div className="signin-helper-cta" onClick={() => navigate('/register-helper')}>
+                <div className="signin-helper-cta-left">
+                    <div className="signin-helper-cta-icon">
+                        <UserPlus size={18} />
+                    </div>
+                    <div>
+                        <p className="signin-helper-cta-title">Want to help your community?</p>
+                        <p className="signin-helper-cta-sub">Register as a Jan Sahayak volunteer</p>
+                    </div>
+                </div>
+                <ChevronRight size={18} className="signin-helper-cta-arrow" />
             </div>
         </div>
     )

@@ -1,0 +1,31 @@
+{
+  "reply": "Kisan bhai, aapke liye kai schemes hain. Maine kuch schemes nikale hain:\n\n1. **Paramparagat Krishi Vikas Yojana**: ₹50,000/hectare for organic farming over 3 years. Eligible: Farmer groups (minimum 20 farmers, 50 acres). Apply at: https://pgsindia-ncof.gov.in\n2. **Pradhan Mantri Annadata Aay Sanrakshan**: MSP support and price deficiency payments to farmers. Eligible: All farmers selling at mandis. Apply at: https://agriculture.gov.in\n3. **PM Kisan Samman Nidhi**: ₹6000/year direct income support to farmers. Eligible: Small & marginal farmers with cultivable land. Apply at: https://pmkisan.gov.in\n\nAap apni state bataiye, toh main aapke liye specific schemes bata sakta hoon. Abhi ke liye, yeh schemes dekhiye aur apply kijiye. **Kisanon ke liye, kisanon dwara, aapka bhavishya ujjwal banaye!**",
+  "language": "hinglish",
+  "matched_schemes": [
+    {
+      "id": "paramparagat-krishi-vikas-yojana",
+      "name": "Paramparagat Krishi Vikas Yojana",
+      "benefit": "Sarkari yojana ka labh",
+      "sector": "agriculture",
+      "state": "Central",
+      "apply_url": "https://pgsindia-ncof.gov.in"
+    },
+    {
+      "id": "uzhavar-sandhai-farmers-market",
+      "name": "Uzhavar Sandhai (Farmers Market)",
+      "benefit": "Sarkari yojana ka labh",
+      "sector": "agriculture",
+      "state": "Tamil Nadu",
+      "apply_url": "https://www.tn.gov.in/agriculture"
+    },
+    {
+      "id": "pradhan-mantri-annadata-aay-sanrakshan",
+      "name": "Pradhan Mantri Annadata Aay Sanrakshan",
+      "benefit": "Sarkari yojana ka labh",
+      "sector": "agriculture",
+      "state": "Central",
+      "apply_url": "https://agriculture.gov.in"
+    }
+  ],
+  "session_id": "test_123"
+}

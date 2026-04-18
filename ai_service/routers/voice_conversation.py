@@ -87,20 +87,26 @@ async def _transcribe_upload(file: UploadFile, state: str = None, language: str 
         result = sarvam_transcribe(content, audio_format=suffix.lstrip("."), language_code=lang_code)
         return result["transcript"]
 
-    # Fallback: Whisper — pass explicit language to avoid misdetection
+    # Fallback: Whisper — if no explicit language is provided, let it auto-detect
     import tempfile, whisper
-    whisper_lang = language or get_language_for_state(state)  # e.g. "hi"
+    whisper_lang = language or get_language_for_state(state)
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(content)
         tmp_path = tmp.name
     try:
         model_size = _os.getenv("WHISPER_MODEL", "base")
         model = whisper.load_model(model_size)
+        
+        params = {
+            "initial_prompt": "Hindi-English Hinglish sarkari yojana conversation.",
+            "fp16": False
+        }
+        if whisper_lang:
+            params["language"] = whisper_lang
+            
         result = model.transcribe(
             tmp_path,
-            language=whisper_lang,  # explicit Hindi hint prevents misdetection
-            initial_prompt="Hindi-English Hinglish sarkari yojana conversation.",
-            fp16=False
+            **params
         )
         return result["text"].strip()
     finally:

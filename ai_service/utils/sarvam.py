@@ -90,16 +90,18 @@ LANGUAGE_VOICES = {
 }
 
 
-def get_language_for_state(state: Optional[str]) -> str:
-    """Get the best language code for a user's state."""
+def get_language_for_state(state: Optional[str]) -> Optional[str]:
+    """Get the best language code for a user's state. Returns None if unknown."""
     if not state:
-        return "hi"
+        return None
     return STATE_TO_LANGUAGE.get(state, "hi")
 
 
-def get_sarvam_lang_code(lang: str) -> str:
+def get_sarvam_lang_code(lang: Optional[str]) -> str:
     """Convert short lang code to Sarvam format (e.g. 'hi' → 'hi-IN')."""
-    return SARVAM_LANGUAGES.get(lang, "hi-IN")
+    if not lang:
+        return "unknown"
+    return SARVAM_LANGUAGES.get(lang, "unknown")
 
 
 # ── Audio format conversion helper ───────────────────────────────────────────
@@ -191,9 +193,8 @@ def sarvam_transcribe(
         "with_timestamps": False,
         "with_disfluencies": False,
     }
-    # Default to hi-IN (Hindi) for best results with Hinglish speakers.
-    # Using "unknown" causes Sarvam to randomly misdetect Indian accented speech.
-    data["language_code"] = language_code or "hi-IN"
+    # Send 'unknown' if no specific language hint is provided to enable Sarvam's auto-detection.
+    data["language_code"] = language_code if language_code and language_code != "unknown" else "unknown"
 
     logger.info(f"Sarvam STT request: fmt={fmt}, size={len(audio_bytes)} bytes, lang={data.get('language_code')}")
     resp = requests.post(url, headers=headers, files=files, data=data, timeout=30)

@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, ArrowLeft, Check } from 'lucide-react'
+import { supabase } from '../lib/supabase'
 
 import './OnboardingPage.css'
 
 const STEPS = [
-    { id: 1, title: 'Aapka Parichay', subtitle: 'Tell us about yourself' },
-    { id: 2, title: 'Aapka Sthan', subtitle: 'Where are you from?' },
-    { id: 3, title: 'Aapki Zaroorat', subtitle: 'What help do you need?' },
+    { id: 1, title: 'Your Profile', subtitle: 'Tell us about yourself' },
+    { id: 2, title: 'Your Location', subtitle: 'Where are you from?' },
+    { id: 3, title: 'Your Interests', subtitle: 'What help do you need?' },
 ]
 
 const STATES = [
@@ -50,7 +51,6 @@ export default function OnboardingPage() {
     const handleNext = async () => {
         if (step < 3) { setStep(s => s + 1); return }
 
-        // Step 3 complete — save profile to localStorage
         setSaving(true)
         const age = form.dob ? Math.floor((Date.now() - new Date(form.dob)) / (365.25 * 24 * 3600 * 1000)) : null
         const profile = {
@@ -65,21 +65,64 @@ export default function OnboardingPage() {
         }
         localStorage.setItem('yojna_profile', JSON.stringify(profile))
 
+        // ── Save to Supabase public.users ─────────────────────────
+        try {
+            const { data: { user } } = await supabase.auth.getUser()
+
+            if (user) {
+                // Update the row the trigger already created (matched by supabase_uid)
+                const { error: upsertErr } = await supabase
+                    .from('users')
+                    .upsert({
+                        supabase_uid: user.id,
+                        email: user.email,
+                        username: form.name.trim() || user.email.split('@')[0],
+                        state: form.state,
+                        language: 'hi-IN',
+                    }, { onConflict: 'supabase_uid' })
+
+                if (upsertErr) console.error('Supabase users update error:', upsertErr.message)
+
+                // Also update user_profiles if it exists
+                await supabase
+                    .from('user_profiles')
+                    .upsert({
+                        // link by email since user_profiles may use the int id
+                        occupation: form.occupation,
+                        district: form.district,
+                        annual_income_inr: form.income,
+                    }, { onConflict: 'id' })
+                    .eq?.('supabase_uid', user.id)   // no-op if column doesn't exist
+
+                // Also update Supabase Auth metadata so it persists correctly
+                await supabase.auth.updateUser({
+                    data: {
+                        name: form.name.trim(),
+                        state: form.state,
+                        occupation: form.occupation,
+                        age,
+                    }
+                })
+            }
+        } catch (e) {
+            console.error('Could not save profile to Supabase:', e)
+        }
+
+        // ── Fallback: also try Spring Boot if token exists ────────
         const token = localStorage.getItem('yojna_token')
         if (token) {
-            try {
-                fetch('http://localhost:8080/api/profile', {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify(profile)
-                }).catch(() => { })
-            } catch (e) { console.error("Could not save initial profile to API", e) }
+            fetch('http://localhost:8080/api/profile', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(profile)
+            }).catch(() => { })
         }
 
         localStorage.removeItem('pending_name')
         setSaving(false)
         navigate('/home')
     }
+
 
     const canProceed = () => {
         if (step === 1) return form.name.trim() && form.dob
@@ -114,8 +157,8 @@ export default function OnboardingPage() {
                     {step === 1 && (
                         <div className="onboard-fields">
                             <div className="field-group">
-                                <label className="field-label">Aapka Naam (Full Name)</label>
-                                <input className="input-glass" placeholder="जैसे: Rajesh Kumar" value={form.name} onChange={e => update('name', e.target.value)} />
+                                <label className="field-label">Full Name</label>
+                                <input className="input-glass" placeholder="e.g. Rajesh Kumar" value={form.name} onChange={e => update('name', e.target.value)} />
                             </div>
                             <div className="field-group">
                                 <label className="field-label">Janm Tithi (Date of Birth)</label>
@@ -159,17 +202,17 @@ export default function OnboardingPage() {
                             <div className="field-group">
                                 <label className="field-label">Rajya (State)</label>
                                 <select className="input-glass" value={form.state} onChange={e => update('state', e.target.value)}>
-                                    <option value="">Apna rajya chunein</option>
+                                    <option value="">Select your state</option>
                                     {STATES.map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
                             </div>
                             <div className="field-group">
                                 <label className="field-label">Zila (District) <span className="text-subtle">(optional)</span></label>
-                                <input className="input-glass" placeholder="जैसे: Pune" value={form.district} onChange={e => update('district', e.target.value)} />
+                                <input className="input-glass" placeholder="e.g. Pune" value={form.district} onChange={e => update('district', e.target.value)} />
                             </div>
                             <div className="onboard-map-hint">
                                 <span>📍</span>
-                                <span className="text-muted text-sm">Aapke rajya ke anusar schemes filter honge</span>
+                                <span className="text-muted text-sm">Schemes will be filtered based on your state</span>
                             </div>
                         </div>
                     )}
@@ -177,7 +220,7 @@ export default function OnboardingPage() {
                     {step === 3 && (
                         <div className="onboard-fields">
                             <p className="text-muted" style={{ fontSize: 13, marginBottom: 12 }}>
-                                Ek ya adhik category chunein:
+                                Select one or more categories:
                             </p>
                             <div className="onboard-cat-grid">
                                 {CATEGORIES.map(c => (
@@ -208,13 +251,13 @@ export default function OnboardingPage() {
                             disabled={!canProceed() || saving}
                             style={{ marginLeft: 'auto' }}
                         >
-                            {saving ? <span className="btn-spinner" /> : step === 3 ? 'Shuru Karein 🚀' : <><span>Aage Badhein</span> <ArrowRight size={16} /></>}
+                            {saving ? <span className="btn-spinner" /> : step === 3 ? 'Get Started 🚀' : <><span>Continue</span> <ArrowRight size={16} /></>}
                         </button>
                     </div>
                 </div>
 
                 <p className="onboard-skip" onClick={() => navigate('/home')}>
-                    Skip karo, baad mein setup karo →
+                    Skip for now, set up later →
                 </p>
             </div>
         </div>

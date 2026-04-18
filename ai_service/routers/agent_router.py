@@ -15,6 +15,15 @@ from ai_service.agent.yojna_sathi import (
     UserProfile, get_next_question, parse_answer, score_eligibility
 )
 
+# Document types that require the user to upload proof during the interview
+# Maps question id → expected doc type (for frontend camera trigger)
+_DOC_QUESTION_MAP: dict[str, str] = {
+    "is_bpl":          "ration_card",    # BPL Ration Card
+    "has_house":       "land_record",    # Proof of residence / Khasra
+    "disability":      "disability_cert",
+    "is_ex_serviceman": "service_cert",
+}
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -55,6 +64,8 @@ class AgentResponse(BaseModel):
     schemes: Optional[list[SchemeSuggestion]] = None
     profile_summary: Optional[dict] = None
     message: Optional[str] = None
+    # OCR trigger: if set, frontend shows camera/upload button for this doc type
+    doc_requested: Optional[str] = None   # e.g. "aadhaar" | "ration_card" | None
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
@@ -108,12 +119,16 @@ async def answer_question(req: AgentAnswerRequest):
             message=_build_summary_msg(profile, len(schemes)),
         )
 
+    # Check if this question requires a document upload
+    doc_requested = _DOC_QUESTION_MAP.get(next_q["id"])
+
     return AgentResponse(
         session_id=req.session_id,
         done=False,
         question=next_q["question_en"],
         question_hi=next_q["question_hi"],
         progress_pct=progress,
+        doc_requested=doc_requested,
     )
 
 
@@ -139,6 +154,14 @@ async def clear_session(session_id: str):
     """Clear a session (user wants to restart)."""
     _sessions.pop(session_id, None)
     return {"status": "cleared"}
+
+
+def get_next_question_for_session(profile: UserProfile) -> Optional[dict]:
+    """
+    Public helper used by ocr_router to get the current question
+    for a given profile (so OCR results can be injected as answers).
+    """
+    return get_next_question(profile)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
