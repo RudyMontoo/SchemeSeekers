@@ -133,56 +133,75 @@ Zero-retention, memory-only document scanner utilizing **PaddleOCR CNN pipelines
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js v18+ (For Frontend)
-- Python 3.10+ (For AI Service)
+- Node.js v18+ (for frontend)
+- Python 3.10+ (for AI service)
 - NVIDIA GPU recommended for local Whisper fallback
 
-### 1. Configure the AI Engine (Backend)
+---
+
+### Step 1 — Clone the Repo
 
 ```bash
-# Clone the repository
 git clone https://github.com/RudyMontoo/SchemeSeekers.git
 cd SchemeSeekers
+```
 
-# Navigate to the AI Service and install Python dependencies
+---
+
+### Step 2 — Setup the AI Backend
+
+```bash
 cd ai_service
 pip install -r requirements.txt
-
-# Setup Environment Keys
 cp .env.example .env
 ```
 
-Ensure your `ai_service/.env` contains:
+Now open `ai_service/.env` and fill in your keys:
 ```env
 GEMINI_API_KEY=your_gemini_api_key
-SARVAM_API_KEY=your_sarvam_api_key   # Optional but heavily recommended
+SARVAM_API_KEY=your_sarvam_api_key        # Optional but recommended
 WHISPER_MODEL=base
-INTERNAL_API_KEY=your-random-secret  # generate: openssl rand -hex 32
+INTERNAL_API_KEY=your-random-secret-here  # Run: openssl rand -hex 32
 ```
 
-**Run the Backend:**
+**First-time only — embed 419 schemes into ChromaDB:**
 ```bash
-# Embed 419 schemes into local ChromaDB
 python ingest.py
+```
 
-# Start the uvicorn server
+**Start the backend server:**
+```bash
 uvicorn main:app --reload --port 8000
 ```
-> API Docs available at `http://localhost:8000/docs`
+> 📖 Interactive API docs at `http://localhost:8000/docs`
 
-### 2. Configure the UI (Frontend)
+---
+
+### Step 3 — Setup the Frontend
+
+Open a **new terminal** from the project root:
 
 ```bash
-# Open a new terminal from the project root
 cd frontend
-
-# Install Node dependencies
 npm install
-
-**Start the development server:**
-```bash
 npm run dev
 ```
+> 🌐 Frontend at `http://localhost:5173`
+> 🔐 Auth is handled automatically via Supabase (no extra config needed)
+
+---
+
+### ✅ Full Startup Checklist
+
+| # | Command | Where to run |
+|---|---------|-------------|
+| 1 | `pip install -r requirements.txt` | `ai_service/` |
+| 2 | `python ingest.py` | `ai_service/` (first time only) |
+| 3 | `uvicorn main:app --reload --port 8000` | `ai_service/` |
+| 4 | `npm install` | `frontend/` (first time only) |
+| 5 | `npm run dev` | `frontend/` |
+
+
 > Frontend available at `http://localhost:5173`
 > Authentication handled automatically by Supabase.
 
