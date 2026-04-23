@@ -1,275 +1,220 @@
-# 🏛️ Yojna Setu — AI-Powered Government Scheme Assistant
+<div align="center">
+  <h1>🏛️ Yojna Setu</h1>
+  <h3>AI-Powered Government Scheme Assistant</h3>
+  <p><b>"Connecting Citizens to their Rights — Jan Jan ko Yojana se Jodo 🇮🇳"</b></p>
+  
+  <p>
+    <a href="https://github.com/RudyMontoo/Yojna_Setu/issues">
+      <img src="https://img.shields.io/badge/version-2.0-blue?style=for-the-badge" alt="Version 2.0" />
+    </a>
+    <a href="https://python.org">
+      <img src="https://img.shields.io/badge/Python-3.10+-green?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.10" />
+    </a>
+    <a href="https://fastapi.tiangolo.com/">
+      <img src="https://img.shields.io/badge/FastAPI-0.110-teal?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
+    </a>
+    <a href="https://react.dev">
+      <img src="https://img.shields.io/badge/React-18.2-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React" />
+    </a>
+  </p>
+  <p>
+    <img src="https://img.shields.io/badge/Schemes_Indexed-419-orange?style=flat-square" alt="419 Schemes" />
+    <img src="https://img.shields.io/badge/Languages_Supported-22_Indian-purple?style=flat-square" alt="22 Languages" />
+  </p>
+</div>
 
-> **"Connecting Citizens to their Rights"**
-> A multilingual, voice-first AI platform that helps every Indian citizen discover, check eligibility, and apply for government schemes — in their own language.
+---
 
-![Version](https://img.shields.io/badge/version-2.0-blue)
-![Python](https://img.shields.io/badge/python-3.10%2B-green)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.110-teal)
-![Schemes](https://img.shields.io/badge/schemes-419-orange)
-![Languages](https://img.shields.io/badge/languages-22%20Indian-purple)
+## 📖 Table of Contents
+1. [What is Yojna Setu?](#-what-is-yojna-setu)
+2. [System Architecture](#-system-architecture)
+3. [Key Features](#-key-features)
+4. [Tech Stack](#-tech-stack)
+5. [Getting Started](#-getting-started)
+6. [API Endpoints](#-api-endpoints)
+7. [Team](#-team)
 
 ---
 
 ## 🌟 What is Yojna Setu?
 
-Thousands of government schemes exist — but most citizens never access them due to complex portals, language barriers, and lack of awareness. **Yojna Setu bridges that gap** using:
+Thousands of government schemes exist, but most citizens never access them due to **complex portals**, **language barriers**, and **lack of awareness**. 
 
-- 🗣️ **Voice-first interaction** — no typing needed
-- 🌐 **22 Indian languages** — Hindi, Tamil, Bengali, Telugu, and more
-- 🤖 **AI-powered eligibility matching** — finds the right schemes for YOUR profile
-- 📡 **Live status tracking** — real-time status from government portals
-- 🔒 **Privacy-first** — Aadhaar/PAN never stored or sent to AI raw
+**Yojna Setu bridges that gap** by providing an highly-accessible, conversational AI interface. Whether the user speaks Hindi, Bengali, or Marathi, our AI assistant evaluates their profile, recommends the exact schemes they are eligible for, and checks their live application status.
+
+- 🗣️ **Voice-first interaction** — *No typing needed.*
+- 🌐 **Nationwide Coverage** — *Supports 22 Indian languages.*
+- 🤖 **Adaptive AI Interview** — *Step-by-step dynamic eligibility matching.*
+- 🔒 **Privacy-first Platform** — *Zero PII retention.*
 
 ---
 
 ## 🏗️ System Architecture
 
-```
-React.js Frontend (Mobile-first)
-        │
-        ▼
-Spring Boot API Gateway (Java 17)
-        │
-        ├──► FastAPI AI Hub (Python)     ← This repository
-        │         ├── LangChain RAG + ChromaDB
-        │         ├── Google Gemini 2.0 Flash
-        │         ├── Sarvam AI (STT/TTS — 22 languages)
-        │         ├── OpenAI Whisper (local, offline fallback)
-        │         └── BeautifulSoup scrapers (6 govt portals)
-        │
-        └──► Flask OCR Worker (Python)   ← Teammate
-                  └── PaddleOCR + OpenCV
+```mermaid
+graph TD;
+    %% Styling
+    classDef frontend fill:#61DAFB,stroke:#333,stroke-width:2px,color:#000;
+    classDef gateway fill:#6DB33F,stroke:#333,stroke-width:2px,color:#fff;
+    classDef backend fill:#009688,stroke:#333,stroke-width:2px,color:#fff;
+    classDef ai fill:#FF9800,stroke:#333,stroke-width:2px,color:#fff;
+    classDef db fill:#3F51B5,stroke:#333,stroke-width:2px,color:#fff;
+
+    User((User)) -->|Voice / Text / Scan| UI[React.js Frontend<br/>Mobile-First UI]:::frontend
+    UI -->|HTTPS| API[Spring Boot API Gateway<br/>Auth & Routing]:::gateway
+    
+    API -->|RAG / Intents| AIHub[FastAPI AI Hub<br/>Python 3.10]:::backend
+    API -->|Base64 Image| OCRWorker[Flask OCR Worker<br/>PaddleOCR + OpenCV]:::backend
+    
+    AIHub -->|Vector Queries| ChromaDB[(ChromaDB<br/>419 Schemes)]:::db
+    AIHub -->|Generative Prompts| Gemini[Google Gemini 2.0 Flash<br/>LLM]:::ai
+    AIHub -->|STT / TTS| Sarvam[Sarvam AI API<br/>22 Languages]:::ai
+    AIHub -->|Offline Fallback STT| Whisper[OpenAI Whisper<br/>Local inference]:::ai
+    AIHub -->|Web Scraping| GovtPortals[[6 Government Portals<br/>Live Status Retrieval]]:::db
 ```
 
 ---
 
 ## ✨ Key Features
 
-### 1. 🤖 Yojna Sathi — Conversational AI Agent
-An adaptive eligibility interview that builds your profile step-by-step and recommends the most relevant schemes.
+### 1. 🤖 Yojna Sathi — Conversational Eligibility Agent
+An adaptive, multi-turn interview that builds a dynamic profile to recommend the best schemes.
+- Understands natural Hinglish (e.g., *"mere paas nahi hai"* → mapped to boolean logic).
+- Re-ranks schemes 3× by dynamic eligibility score (0–100).
+- Auto-generates document checklists for Common Service Center (CSC) visits.
 
-- Asks one question at a time in **Hinglish** + regional languages
-- Understands natural Hinglish answers: *"mahila"* → female, *"mere paas nahi hai"* → No, *"bilkul"* → Yes
-- **Re-ranks schemes 3× by eligibility score** (0–100) before returning top results
-- Handles 13+ profile fields: state, age, gender, caste, income, BPL, occupation, disability, etc.
-- **New: `/agent/checklist`** — returns document requirements per scheme for CSC visits
+### 2. 🎙️ Bidirectional Voice Pipeline
+Total hands-free experience tailored for Indian dialects.
+- **Auto-State Detection:** Detects user's state to pick the correct regional language & voice actor.
+- **Primary STT/TTS:** Sarvam Saarika v2 & Bulbul v3 APIs.
+- **Fail-safe Mode:** Automatically switches to locally hosted OpenAI Whisper models if APIs go down.
 
-### 2. 🎙️ Voice Pipeline — Bidirectional Audio Interview
-Full voice-to-voice conversation with the agent.
+### 3. 💬 Low-Latency RAG Chatbot
+Type or speak any problem in plain language.
+- Powered by **Google Gemini 2.0 Flash** + **ChromaDB** with `all-MiniLM-L6-v2` embeddings.
+- Maintains strict conversational session memory via `langchain_core`.
+- Streaming endpoints allow tokens to stream natively to the frontend.
 
-- **Speech-to-Text**: Sarvam Saarika v2 (primary) → OpenAI Whisper (offline fallback)
-- **Text-to-Speech**: Sarvam Bulbul v3 with 30+ natural Indian voices
-- **Auto language selection**: detects user's state → picks correct regional language & voice
-- Streams MP3 audio directly back — no frontend processing needed
+### 4. 🛰️ Live Status Tracker
+Real-time application status dynamically scraped from active portals rather than caching stale data.
+- Built-in 3x retry mechanism with **exponential backoff**.
+- Supports 6 major portals including PM Kisan, MGNREGS, and Ayushman Bharat.
 
-### 3. 💬 RAG Chatbot — Hinglish Scheme Search with Memory
-Type any problem in plain language and get scheme recommendations.
+### 5. 🛡️ PII Masker (Privacy Guard)
+Automatically intercepts Prompts before reaching the LLM and masks sensitive entities utilizing fast Regex sanitization (`Aadhaar`, `PAN`, `Phone Numbers`).
 
-- **Per-session conversation memory** — remembers full context across messages in a session
-- **No-match hallucination guard** — if no scheme found, redirects to myscheme.gov.in honestly
-- **Streaming endpoint** (`/chat/stream`) — tokens stream as Gemini generates for faster UX
-- Filters by state + sector for hyper-relevant results
-- Powered by **Google Gemini 2.0 Flash** + **ChromaDB** + `langchain_core` memory
-
-### 4. 📡 Live Status Tracker
-Real-time application status scraped from official government portals.
-- **Auto-retry**: 3 retries with exponential backoff on slow/failing govt portals
-
-| Scheme | Portal | Input |
-|--------|--------|-------|
-| PM Kisan Samman Nidhi | pmkisan.gov.in | Aadhaar |
-| PM Awas Yojana - Gramin | pmayg.nic.in | Registration No. |
-| MGNREGS (MNREGA) | nrega.nic.in | Job Card No. |
-| National Scholarship Portal | scholarships.gov.in | Application ID |
-| Ayushman Bharat PM-JAY | beneficiary.nha.gov.in | Aadhaar |
-| PM Ujjwala Yojana | mylpg.in | Application ID |
-
-### 5. 🔒 PII Masker — Privacy First
-Automatically detects and redacts sensitive data before it touches any AI model.
-- Aadhaar: `9876 5432 1234` → `XXXX-XXXX-XXXX`
-- PAN: `ABCDE1234F` → `XXXXXXXXXX`
-- Phone: `9876543210` → `XXXXXXXXXX`
-
-### 6. 📚 419 Government Schemes Dataset
-Hand-curated and verified across 19 sectors and 36 states/UTs.
-
-| Type | Count |
-|------|-------|
-| Central Government Schemes | 276 |
-| State-Specific Schemes | 143 |
-| **Total** | **419** |
-
-Sectors: Agriculture, Health, Education, Housing, Women & Child, SC/ST Welfare, Defence, Employment, Energy, Environment, Digital India, Sports, Fisheries, Tribal, Minority, Senior Citizens, Social Security, Rural Development, Financial Inclusion
-
-### 7. 📷 Jan-Sahayak Lens (OCR Document Scanner)
-A zero-retention, memory-only document scanner available via our custom React UI and natively integrated into the Sathi Chat.
-- **OpenCV Preprocessing**: Auto-deskew, document perspective warp, and adaptive thresholding for clear readability.
-- **CNN-Powered Extraction**: Text detection and character recognition driven by PaddleOCR's deep learning architecture.
-- **Privacy-First**: Extracts required ID constraints in volatile RAM. No images are written to disk.
-
+### 6. 📷 Jan-Sahayak Lens (OCR)
+Zero-retention, memory-only document scanner utilizing **PaddleOCR CNN pipelines** and **OpenCV** (Auto-deskew, warping, adaptive thresholding) to pull document constraints.
 
 ---
 
 ## 🛠️ Tech Stack
 
-| Component | Technology |
-|-----------|-----------|
-| API Framework | FastAPI (Python 3.10+) |
-| LLM | Google Gemini 2.0 Flash |
-| RAG / Agent | LangChain |
-| Conversation Memory | `langchain_core` `InMemoryChatMessageHistory` (per session) |
-| Vector Database | ChromaDB |
-| Embeddings | `all-MiniLM-L6-v2` (local, free) |
-| Primary STT | Sarvam Saarika v2 (22 Indian languages) |
-| Fallback STT | OpenAI Whisper (local, offline) |
-| Primary TTS | Sarvam Bulbul v3 (natural Indian voices) |
-| Fallback TTS | gTTS (Hindi) |
-| Translation | Sarvam Mayura v1 |
-| Web Scraping | BeautifulSoup4 + Requests (3× retry backoff) |
-| PII Detection | Regex (Python `re`) |
+<details open>
+<summary><b>Click to expand</b></summary>
 
----
+| Category | Technology |
+|----------|-----------|
+| **Frontend UI** | React 18, Vite, Vanilla CSS (Glassmorphism design) |
+| **Backend Core** | FastAPI (Python 3.10+), Spring Boot (Java 17) |
+| **LLM Engine** | Google Gemini 2.0 Flash, LangChain |
+| **Vector Database**| ChromaDB, `all-MiniLM-L6-v2` embedding logic |
+| **Vision/OCR** | OpenCV, PaddleOCR, Flask Worker |
+| **Audio/Voice** | Sarvam AI (Saarika, Bulbul), OpenAI Whisper, gTTS |
+| **Web Scraping** | BeautifulSoup4 (BS4), Python Requests |
 
-## 📁 Project Structure
-
-```
-ai_service/
-├── main.py                         # FastAPI entrypoint
-├── rag_chain.py                    # LangChain RAG pipeline
-├── ingest.py                       # Scheme JSON → ChromaDB ingestion
-├── requirements.txt
-│
-├── agent/
-│   └── yojna_sathi.py              # Interview engine + eligibility scorer
-│
-├── routers/
-│   ├── chat.py                     # POST /chat, /chat/stream, DELETE /chat/session/{id}
-│   ├── agent_router.py             # POST /agent/start, /agent/answer, GET /agent/checklist
-│   ├── voice.py                    # POST /voice/transcribe, /voice/query
-│   ├── voice_conversation.py       # POST /voice/conversation/* (audio ↔ audio)
-│   └── status_tracker.py           # POST /status/check — live portal scraping (with retry)
-│
-├── utils/
-│   ├── sarvam.py                   # Sarvam AI STT / TTS / Translation
-│   ├── tts.py                      # gTTS fallback
-│   └── pii_masker.py               # Aadhaar / PAN / Phone redaction
-│
-└── data/
-    └── schemes/
-        ├── *.json                  # Central sector schemes (19 sectors)
-        └── states/
-            └── *.json              # State schemes (36 states/UTs)
-```
+</details>
 
 ---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Python 3.10+
-- NVIDIA GPU recommended (for Whisper local inference)
+- Node.js v18+ (For Frontend)
+- Python 3.10+ (For AI Service)
+- NVIDIA GPU recommended for local Whisper fallback
 
-### 1. Clone & Install
+### 1. Configure the AI Engine (Backend)
 
 ```bash
-git clone https://github.com/RudyMontoo/Yojna_Setu.git
-cd Yojna_Setu/ai_service
+# Clone the repository
+git clone https://github.com/RudyMontoo/SchemeSeekers.git
+cd SchemeSeekers
+
+# Navigate to the AI Service and install Python dependencies
+cd ai_service
 pip install -r requirements.txt
-```
 
-### 2. Configure Environment
-
-```bash
+# Setup Environment Keys
 cp .env.example .env
-# Edit .env and fill in your API keys
 ```
 
+Ensure your `.env` contains:
 ```env
 GEMINI_API_KEY=your_gemini_api_key
-SARVAM_API_KEY=your_sarvam_api_key   # optional but recommended
-WHISPER_MODEL=base                    # tiny / base / small / medium
+SARVAM_API_KEY=your_sarvam_api_key   # Optional but heavily recommended
+WHISPER_MODEL=base
 ```
 
-> **Get free API keys:**
-> - Gemini: [aistudio.google.com](https://aistudio.google.com)
-> - Sarvam: [dashboard.sarvam.ai](https://dashboard.sarvam.ai)
-
-### 3. Build the Vector Database
-
+**Run the Backend:**
 ```bash
-cd ai_service
+# Embed 419 schemes into local ChromaDB
 python ingest.py
-# Embeds all 419 schemes into ChromaDB (~2 minutes first time)
-```
 
-### 4. Run the AI Service (Backend)
+# Start the uvicorn server
+uvicorn main:app --reload --port 8000
+```
+> API Docs available at `http://localhost:8000/docs`
+
+### 2. Configure the UI (Frontend)
 
 ```bash
-# From the project root, start the FastAPI server
-uvicorn ai_service.main:app --reload --port 8000
-```
-
-API Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
-
-### 5. Run the Frontend (React Vite)
-
-```bash
-# Open a new terminal and navigate to the frontend directory
+# Open a new terminal from the project root
 cd frontend
 
-# Install dependencies
+# Install Node dependencies
 npm install
 
-# Start the Vite development server
+# Start the Vite Development Server
 npm run dev
 ```
-
-Frontend will be available at [http://localhost:5173](http://localhost:5173).
+> Frontend available at `http://localhost:5173`
 
 ---
 
-## 📡 API Endpoints
+## 📡 API Endpoints 
 
-| Method | Endpoint | Description |
+<details>
+<summary><b>View Complete API Reference</b></summary>
+
+| HTTP Method | API Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/chat/` | Text chatbot — Hinglish scheme search (with session memory) |
-| `POST` | `/chat/stream` | **NEW** — Streaming chatbot (tokens stream as generated) |
-| `DELETE` | `/chat/session/{id}` | **NEW** — Clear conversation memory for a session |
+| `GET` | `/health` | Diagnostic status (ChromaDB count, DB state, LLM validation) |
+| `POST` | `/chat/` | RAG Chatbot with conversation memory |
+| `POST` | `/chat/stream` | Stream generated tokens directly |
 | `POST` | `/agent/start` | Start eligibility interview |
-| `POST` | `/agent/answer` | Submit interview answer |
-| `GET` | `/agent/checklist` | **NEW** — Document requirements per scheme (`?query=pm+kisan&state=UP`) |
-| `POST` | `/voice/transcribe` | Audio file → text |
-| `POST` | `/voice/query` | Audio → schemes (end-to-end) |
-| `POST` | `/voice/conversation/start` | Start voice interview (returns MP3) |
-| `POST` | `/voice/conversation/answer` | Voice answer → voice response |
-| `POST` | `/voice/conversation/chat` | One-shot voice query |
-| `POST` | `/status/check` | Live scheme application status |
-| `POST` | `/ocr/scan` | OpenCV + CNN document OCR (Zero-retention) |
-| `GET` | `/status/schemes` | List trackable schemes |
-| `GET` | `/health` | **Updated** — Rich diagnostic (ChromaDB count, API keys, sessions) |
-| `GET` | `/docs` | Swagger UI |
+| `POST` | `/agent/answer` | Provide interview answers to AI Agent |
+| `GET` | `/agent/checklist` | Request physical document list |
+| `POST` | `/voice/query` | Translate Voice mp3 -> Text -> RAG Query -> Voice MP3 |
+| `POST` | `/status/check` | Fetch Live Scraped Status from portals |
+| `POST` | `/ocr/scan` | Zero-retention document processing |
+
+</details>
 
 ---
 
-## 👥 Team
+## 👥 Team & Architecture Roles
 
-| Member | Role |
+| Member | Focus / Role |
 |--------|------|
-| **Rudra (AI/ML Lead)** | FastAPI, LangChain RAG+Memory, Yojna Sathi agent, Whisper/Sarvam voice pipeline, PII masking, Status Tracker, Streaming API |
-| Member 2 | Spring Boot API Gateway, JWT auth, PostgreSQL |
-| Member 3 | Flask OCR Worker, PaddleOCR, Maps/YouTube APIs |
-| Member 4 | React.js Frontend, Camera/Mic hooks, Multilingual UI |
+| **Rudra (AI/ML Lead)** | FastAPI, LangChain RAG & Memory, Agent Pipeline, STT/TTS Fallbacks, PII Masker, Web Scraping |
+| **Member 2** | Spring Boot API Gateway, Security Auth, Route Mapping |
+| **Member 3** | Flask OCR, PaddleOCR Integration, External Maps Integration |
+| **Member 4** | React Frontend, Responsive Design System, Hardware APIs (Camera/Mic) |
 
 ---
 
-## 📄 License
-
-This project is built for social good. All government scheme data is sourced from official public portals.
-
----
-
-> *"Jan Jan ko Yojana se Jodo"* — Connect every citizen to their entitlements 🇮🇳
-# Test_Yojna_Setu
-
-# SchemeSeekers
+<div align="center">
+  <p><i>This project is built for social good. All data is sourced directly from verifiable Indian government public portals.</i></p>
+  <p><b>MSE-2 Evaluated Project</b></p>
+</div>
