@@ -53,24 +53,24 @@ Thousands of government schemes exist, but most citizens never access them due t
 
 ```mermaid
 graph TD;
-    %% Styling
     classDef frontend fill:#61DAFB,stroke:#333,stroke-width:2px,color:#000;
-    classDef gateway fill:#6DB33F,stroke:#333,stroke-width:2px,color:#fff;
     classDef backend fill:#009688,stroke:#333,stroke-width:2px,color:#fff;
     classDef ai fill:#FF9800,stroke:#333,stroke-width:2px,color:#fff;
     classDef db fill:#3F51B5,stroke:#333,stroke-width:2px,color:#fff;
+    classDef auth fill:#3ECF8E,stroke:#333,stroke-width:2px,color:#000;
 
     User((User)) -->|Voice / Text / Scan| UI[React.js Frontend<br/>Mobile-First UI]:::frontend
-    UI -->|HTTPS| API[Spring Boot API Gateway<br/>Auth & Routing]:::gateway
-    
-    API -->|RAG / Intents| AIHub[FastAPI AI Hub<br/>Python 3.10]:::backend
-    API -->|Base64 Image| OCRWorker[Flask OCR Worker<br/>PaddleOCR + OpenCV]:::backend
-    
-    AIHub -->|Vector Queries| ChromaDB[(ChromaDB<br/>419 Schemes)]:::db
+
+    UI -->|Auth / Sign In / Sign Up| Supabase[Supabase Auth<br/>Email + JWT Session]:::auth
+    Supabase -->|User profiles stored in| SupaDB[(Supabase PostgreSQL<br/>User & Profile Data)]:::db
+
+    UI -->|API Calls + Supabase JWT| AIHub[FastAPI AI Hub<br/>Python 3.10 — Port 8000]:::backend
+
+    AIHub -->|Vector Queries| ChromaDB[(ChromaDB<br/>419 Schemes Indexed)]:::db
     AIHub -->|Generative Prompts| Gemini[Google Gemini 2.0 Flash<br/>LLM]:::ai
-    AIHub -->|STT / TTS| Sarvam[Sarvam AI API<br/>22 Languages]:::ai
+    AIHub -->|STT / TTS 22 langs| Sarvam[Sarvam AI API<br/>Saarika v2 + Bulbul v3]:::ai
     AIHub -->|Offline Fallback STT| Whisper[OpenAI Whisper<br/>Local inference]:::ai
-    AIHub -->|Web Scraping| GovtPortals[[6 Government Portals<br/>Live Status Retrieval]]:::db
+    AIHub -->|BeautifulSoup Scraping| GovtPortals[[6 Government Portals<br/>Live Status Retrieval]]:::db
 ```
 
 ---
@@ -116,12 +116,15 @@ Zero-retention, memory-only document scanner utilizing **PaddleOCR CNN pipelines
 | Category | Technology |
 |----------|-----------|
 | **Frontend UI** | React 18, Vite, Vanilla CSS (Glassmorphism design) |
-| **Backend Core** | FastAPI (Python 3.10+), Spring Boot (Java 17) |
-| **LLM Engine** | Google Gemini 2.0 Flash, LangChain |
-| **Vector Database**| ChromaDB, `all-MiniLM-L6-v2` embedding logic |
-| **Vision/OCR** | OpenCV, PaddleOCR, Flask Worker |
-| **Audio/Voice** | Sarvam AI (Saarika, Bulbul), OpenAI Whisper, gTTS |
-| **Web Scraping** | BeautifulSoup4 (BS4), Python Requests |
+| **Authentication** | Supabase Auth (Email/Password + JWT session management) |
+| **User Database** | Supabase PostgreSQL (user profiles, onboarding data) |
+| **AI Backend** | FastAPI (Python 3.10+) |
+| **LLM Engine** | Google Gemini 2.0 Flash via LangChain |
+| **Vector Database** | ChromaDB, `all-MiniLM-L6-v2` embeddings (local) |
+| **Vision/OCR** | EasyOCR, OpenCV preprocessing |
+| **Audio/Voice** | Sarvam AI (Saarika v2 STT, Bulbul v3 TTS), OpenAI Whisper (offline fallback), gTTS |
+| **Web Scraping** | BeautifulSoup4 + Requests (3× exponential retry) |
+| **API Security** | X-API-Key header auth, per-IP sliding-window rate limiting |
 
 </details>
 
@@ -149,11 +152,12 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Ensure your `.env` contains:
+Ensure your `ai_service/.env` contains:
 ```env
 GEMINI_API_KEY=your_gemini_api_key
 SARVAM_API_KEY=your_sarvam_api_key   # Optional but heavily recommended
 WHISPER_MODEL=base
+INTERNAL_API_KEY=your-random-secret  # generate: openssl rand -hex 32
 ```
 
 **Run the Backend:**
@@ -175,10 +179,12 @@ cd frontend
 # Install Node dependencies
 npm install
 
-# Start the Vite Development Server
+**Start the development server:**
+```bash
 npm run dev
 ```
 > Frontend available at `http://localhost:5173`
+> Authentication handled automatically by Supabase.
 
 ---
 
@@ -207,10 +213,10 @@ npm run dev
 
 | Member | Focus / Role |
 |--------|------|
-| **Rudra (AI/ML Lead)** | FastAPI, LangChain RAG & Memory, Agent Pipeline, STT/TTS Fallbacks, PII Masker, Web Scraping |
-| **Member 2** | Spring Boot API Gateway, Security Auth, Route Mapping |
-| **Member 3** | Flask OCR, PaddleOCR Integration, External Maps Integration |
-| **Member 4** | React Frontend, Responsive Design System, Hardware APIs (Camera/Mic) |
+| **Rudra (AI/ML Lead)** | FastAPI AI Hub, LangChain RAG & Memory, Agent Pipeline, Sarvam/Whisper STT/TTS, PII Masker, Web Scraping, API Security |
+| **Member 2** | Spring Boot API Gateway *(parked — future migration)*, JWT Architecture |
+| **Member 3** | Flask OCR Worker, EasyOCR/PaddleOCR Integration, External Maps APIs |
+| **Member 4** | React Frontend, Supabase Auth Integration, Responsive Design System, Camera/Mic hooks |
 
 ---
 
