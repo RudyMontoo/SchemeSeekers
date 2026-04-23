@@ -10,10 +10,13 @@ import tempfile
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Form
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
+
+from ai_service.utils.auth import require_api_key
+from ai_service.utils.rate_limiter import voice_limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/voice", tags=["voice"])
@@ -56,8 +59,9 @@ class VoiceToSchemeResponse(BaseModel):
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
-@router.post("/transcribe", response_model=TranscribeResponse)
+@router.post("/transcribe", response_model=TranscribeResponse, dependencies=[Depends(require_api_key)])
 async def transcribe_audio(
+    request: Request,
     file: UploadFile = File(...),
     language: Optional[str] = Form(default=None),  # hint: "hi" for Hindi
 ):
@@ -65,6 +69,7 @@ async def transcribe_audio(
     Transcribe uploaded audio to text using Whisper.
     Optimized for Hinglish (Hindi-English code-switching).
     """
+    voice_limiter.check(voice_limiter.get_client_ip(request))
     # Validate file extension
     suffix = Path(file.filename or "audio.wav").suffix.lower()
     if suffix not in SUPPORTED_FORMATS:
@@ -125,8 +130,9 @@ async def transcribe_audio(
         os.unlink(tmp_path)
 
 
-@router.post("/query", response_model=VoiceToSchemeResponse)
+@router.post("/query", response_model=VoiceToSchemeResponse, dependencies=[Depends(require_api_key)])
 async def voice_to_scheme(
+    request: Request,
     file: UploadFile = File(...),
     state: Optional[str] = Form(default=None),
     language: Optional[str] = Form(default=None),
@@ -135,8 +141,9 @@ async def voice_to_scheme(
     End-to-end voice query:
     audio → Whisper STT → text → RAG chain → Hinglish scheme reply
     """
+    voice_limiter.check(voice_limiter.get_client_ip(request))
     # Step 1: Transcribe
-    transcribe_resp = await transcribe_audio(file, language)
+    transcribe_resp = await transcribe_audio(request, file, language)
     transcript = transcribe_resp.text
 
     if not transcript or len(transcript.strip()) < 3:

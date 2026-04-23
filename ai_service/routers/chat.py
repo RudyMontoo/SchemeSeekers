@@ -5,11 +5,14 @@ FastAPI Chat Router — Yojna Setu
   - No-match hallucination guard
   - Streaming support (/chat/stream)
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional
 import logging
+
+from ai_service.utils.auth import require_api_key
+from ai_service.utils.rate_limiter import chat_limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -31,6 +34,13 @@ class ChatRequest(BaseModel):
     state: Optional[str] = None             # e.g. "Rajasthan"
     sector: Optional[str] = None            # e.g. "health"
     language: Optional[str] = "hinglish"
+
+    @field_validator("message")
+    @classmethod
+    def message_length(cls, v: str) -> str:
+        if len(v) > 2000:
+            raise ValueError("Message too long. Maximum 2000 characters allowed.")
+        return v
 
 class SchemeMatch(BaseModel):
     id: str
@@ -103,8 +113,9 @@ def fetch_matched_schemes(query: str, filters: Optional[dict]) -> list[SchemeMat
 
 
 # ── Standard chat route (with memory) ─────────────────────────────────────────
-@router.post("/", response_model=ChatResponse)
-async def chat(req: ChatRequest):
+@router.post("/", response_model=ChatResponse, dependencies=[Depends(require_api_key)])
+async def chat(req: ChatRequest, request: Request):
+    chat_limiter.check(chat_limiter.get_client_ip(request))
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
@@ -136,12 +147,13 @@ async def chat(req: ChatRequest):
 
 
 # ── Streaming chat route ───────────────────────────────────────────────────────
-@router.post("/stream")
-async def chat_stream(req: ChatRequest):
+@router.post("/stream", dependencies=[Depends(require_api_key)])
+async def chat_stream(req: ChatRequest, request: Request):
     """
     Streaming version — yields tokens as they arrive from Gemini.
     Frontend can use EventSource or fetch with ReadableStream.
     """
+    chat_limiter.check(chat_limiter.get_client_ip(request))
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 

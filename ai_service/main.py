@@ -6,8 +6,10 @@ Docs:    http://localhost:8000/docs
 import os
 import logging
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 
 # Load .env from ai_service directory explicitly
@@ -20,6 +22,24 @@ app = FastAPI(
     description="AI/ML backend for Yojna Setu — Indian Government Scheme Assistant",
     version="1.0.0",
 )
+
+# ── Security Headers Middleware ────────────────────────────────────────────────
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Injects standard security headers on every response."""
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "object-src 'none';"
+        )
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 # ── CORS (allow React frontend on port 3000 and Spring Boot on 8080) ──────────
 app.add_middleware(
@@ -34,6 +54,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Global unhandled exception handler (prevents stack trace leaks) ───────────
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logging.getLogger(__name__).error(
+        f"Unhandled exception on {request.method} {request.url.path}: {exc}",
+        exc_info=True,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An internal error occurred. Please try again later."},
+    )
 
 # ── Mount routers ─────────────────────────────────────────────────────────────
 from ai_service.routers.chat import router as chat_router
@@ -79,8 +111,7 @@ async def root():
 
 @app.get("/health")
 async def health():
-    """Rich health check — shows ChromaDB index count, API keys, and service status."""
-    import os
+    """Health check — returns service status and ChromaDB index state."""
     from ai_service.rag_chain import get_chromadb_count, _memory_store
 
     chroma_count = get_chromadb_count()
@@ -90,14 +121,6 @@ async def health():
         "chromadb": {
             "indexed_schemes": chroma_count,
             "healthy": chroma_count > 0,
-        },
-        "api_keys": {
-            "groq":    bool(os.getenv("GROQ_API_KEY")),
-            "sarvam": bool(os.getenv("SARVAM_API_KEY")),
-        },
-        "voice": {
-            "whisper_model": os.getenv("WHISPER_MODEL", "base"),
-            "sarvam_tts_active": bool(os.getenv("SARVAM_API_KEY")),
         },
         "chat_sessions_active": len(_memory_store),
     }

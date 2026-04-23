@@ -13,33 +13,19 @@ Two usage modes:
 import gc
 import logging
 import time
-from collections import defaultdict
 from typing import Optional, Annotated
 
-from fastapi import APIRouter, File, Form, UploadFile, HTTPException, Request
+from fastapi import APIRouter, File, Form, UploadFile, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from ai_service.utils.doc_scanner import preprocess_image, pdf_page_to_image_bytes
 from ai_service.utils.id_extractor import extract_ids, detect_doc_type, build_agent_answer
+from ai_service.utils.auth import require_api_key
+from ai_service.utils.rate_limiter import ocr_limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["ocr"])
-
-# ── In-memory rate limiter (security: 10 OCR requests/minute per IP) ─────────
-_rate_store: dict[str, list[float]] = defaultdict(list)
-_OCR_RATE_LIMIT  = 10    # max requests
-_OCR_RATE_WINDOW = 60.0  # seconds
-
-def _check_rate_limit(ip: str) -> bool:
-    """Returns True if request is allowed, False if rate limit exceeded."""
-    now = time.monotonic()
-    window_start = now - _OCR_RATE_WINDOW
-    _rate_store[ip] = [t for t in _rate_store[ip] if t > window_start]
-    if len(_rate_store[ip]) >= _OCR_RATE_LIMIT:
-        return False
-    _rate_store[ip].append(now)
-    return True
 
 # ── Response Models ────────────────────────────────────────────────────────────
 
@@ -63,7 +49,7 @@ _PDF_MIME    = "application/pdf"
 
 
 # ── Main Endpoint ─────────────────────────────────────────────────────────────
-@router.post("/scan", response_model=ScanResponse)
+@router.post("/scan", response_model=ScanResponse, dependencies=[Depends(require_api_key)])
 async def scan_document(
     request: Request,
     file: Annotated[UploadFile, File(description="Document image (JPEG/PNG/WEBP) or PDF")],
@@ -81,13 +67,8 @@ async def scan_document(
     all_ocr_text = ""
     page_count = 1
 
-    # ── Rate limiting ──────────────────────────────────────────────────────────
-    client_ip = request.client.host if request.client else "unknown"
-    if not _check_rate_limit(client_ip):
-        raise HTTPException(
-            status_code=429,
-            detail=f"Too many scan requests. Please wait a moment and try again."
-        )
+    # ── Rate limiting (shared ocr_limiter, 10 req/min per IP) ────────────────
+    ocr_limiter.check(ocr_limiter.get_client_ip(request))
 
     try:
         # ── Read file into memory ──────────────────────────────────────────────

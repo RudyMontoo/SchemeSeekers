@@ -3,7 +3,7 @@ Yojna Setu — Scheme Application Status Tracker
 Scrapes real government portals to fetch application status.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 import requests
 from bs4 import BeautifulSoup
@@ -11,6 +11,9 @@ import re
 import json
 from typing import Optional
 from requests.adapters import HTTPAdapter, Retry
+
+from ai_service.utils.auth import require_api_key
+from ai_service.utils.rate_limiter import status_limiter
 
 router = APIRouter(prefix="/status", tags=["Status Tracker"])
 
@@ -271,8 +274,8 @@ SCRAPER_MAP = {
 
 # ─── API Endpoints ────────────────────────────────────────────────────────────
 
-@router.post("/check", response_model=StatusResponse)
-async def check_status(req: StatusRequest):
+@router.post("/check", response_model=StatusResponse, dependencies=[Depends(require_api_key)])
+async def check_status(req: StatusRequest, request: Request):
     """
     Check real-time scheme application status.
     
@@ -280,6 +283,7 @@ async def check_status(req: StatusRequest):
     - **identifier**: Aadhaar number / Application ID / Registration Number
     - **state_code**: required only for NREGA (e.g. "UP", "MH")
     """
+    status_limiter.check(status_limiter.get_client_ip(request))
     scheme_key = req.scheme_key.lower()
     if scheme_key not in SCHEME_REGISTRY:
         raise HTTPException(

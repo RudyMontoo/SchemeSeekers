@@ -6,10 +6,13 @@ Session state is stored in-memory per session_id (for dev).
 In production: use Redis or a DB-backed session store.
 """
 import uuid
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 from typing import Optional
 import logging
+
+from ai_service.utils.auth import require_api_key
+from ai_service.utils.rate_limiter import agent_limiter
 
 from ai_service.agent.yojna_sathi import (
     UserProfile, get_next_question, parse_answer, score_eligibility
@@ -69,9 +72,10 @@ class AgentResponse(BaseModel):
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
-@router.post("/start", response_model=AgentStartResponse)
-async def start_session():
+@router.post("/start", response_model=AgentStartResponse, dependencies=[Depends(require_api_key)])
+async def start_session(request: Request):
     """Start a new Yojna Sathi interview session."""
+    agent_limiter.check(agent_limiter.get_client_ip(request))
     session_id = str(uuid.uuid4())
     profile = UserProfile()
     _sessions[session_id] = {"profile": profile, "question_idx": 0}
@@ -86,9 +90,10 @@ async def start_session():
     )
 
 
-@router.post("/answer", response_model=AgentResponse)
-async def answer_question(req: AgentAnswerRequest):
+@router.post("/answer", response_model=AgentResponse, dependencies=[Depends(require_api_key)])
+async def answer_question(req: AgentAnswerRequest, request: Request):
     """Submit an answer and get the next question or final scheme recommendations."""
+    agent_limiter.check(agent_limiter.get_client_ip(request))
     session = _sessions.get(req.session_id)
     if not session:
         raise HTTPException(status_code=404,
