@@ -203,13 +203,29 @@ python ingest.py
 # Embeds all 419 schemes into ChromaDB (~2 minutes first time)
 ```
 
-### 4. Run the Server
+### 4. Run the AI Service (Backend)
 
 ```bash
+# From the project root, start the FastAPI server
 uvicorn ai_service.main:app --reload --port 8000
 ```
 
 API Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+### 5. Run the Frontend (React Vite)
+
+```bash
+# Open a new terminal and navigate to the frontend directory
+cd frontend
+
+# Install dependencies
+npm install
+
+# Start the Vite development server
+npm run dev
+```
+
+Frontend will be available at [http://localhost:5173](http://localhost:5173).
 
 ---
 
