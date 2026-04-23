@@ -42,24 +42,24 @@ SCHEME_INTRO_HI = "Bahut achha! Aapke liye yeh sarkari yojanaen hain: "
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-def _speak(text: str, state: str = None) -> bytes:
+def _speak(text: str, state: str = None, lang_code: str = None) -> bytes:
     """
     Convert text to audio. Uses Sarvam Bulbul v3 if API key is set,
     else falls back to gTTS. Auto-selects language based on user's state.
     """
     from ai_service.utils.sarvam import speak_for_state, SARVAM_API_KEY
     if SARVAM_API_KEY:
-        logger.info(f"TTS via Sarvam Bulbul v3 (state={state})")
-        return speak_for_state(text, state)
+        logger.info(f"TTS via Sarvam Bulbul v3 (state={state}, lang_code={lang_code})")
+        return speak_for_state(text, state=state, force_lang_code=lang_code)
     # Fallback
     from ai_service.utils.tts import text_to_speech
     return text_to_speech(text, lang='hi')
 
 
-async def _transcribe_upload(file: UploadFile, state: str = None, language: str = None) -> str:
+async def _transcribe_upload(file: UploadFile, state: str = None, language: str = None) -> tuple[str, str]:
     """
     Transcribe audio. Uses Sarvam Saarika v2 if API key set, else Whisper.
-    Derives language hint from `language` param (e.g. 'hi') or `state` (e.g. 'Uttar Pradesh').
+    Returns: (transcript, detected_language_code)
     """
     import os as _os
     suffix = Path(file.filename or "audio.wav").suffix.lower()
@@ -71,25 +71,31 @@ async def _transcribe_upload(file: UploadFile, state: str = None, language: str 
 
     from ai_service.utils.sarvam import (
         SARVAM_API_KEY, sarvam_transcribe,
-        get_language_for_state, get_sarvam_lang_code
+        get_language_for_state, get_sarvam_lang_code, SARVAM_LANGUAGES
     )
 
-    # Resolve language code: explicit > state-derived > default hi-IN
+    # Resolve language code: explicit > state-derived > auto-detect
     if language:
         lang_code = get_sarvam_lang_code(language)   # e.g. "hi" → "hi-IN"
-    else:
+    elif state and state != "null" and state != "Central":
         lang = get_language_for_state(state)          # e.g. "UP" → "hi"
         lang_code = get_sarvam_lang_code(lang)        # → "hi-IN"
+    else:
+        lang_code = "unknown" # Enable Sarvam AI auto-detection across 22 languages
+
     logger.info(f"STT language hint: {lang_code} (state={state}, language={language})")
 
-    if SARVAM_API_KEY:
+    if SARVAM_API_KEY and lang_code != "unknown":
         logger.info("STT via Sarvam Saarika v2")
         result = sarvam_transcribe(content, audio_format=suffix.lstrip("."), language_code=lang_code)
-        return result["transcript"]
+        return result["transcript"], lang_code
 
-    # Fallback: Whisper — if no explicit language is provided, let it auto-detect
+    # Fallback / Auto-detect: Whisper — naturally handles language auto-detection if state is unknown
     import tempfile, whisper
-    whisper_lang = language or get_language_for_state(state)
+    whisper_lang = language
+    if not whisper_lang and state and state != "null" and state != "Central":
+        whisper_lang = get_language_for_state(state)
+        
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(content)
         tmp_path = tmp.name
@@ -108,12 +114,14 @@ async def _transcribe_upload(file: UploadFile, state: str = None, language: str 
             tmp_path,
             **params
         )
-        return result["text"].strip()
+        detected_w_lang = result.get("language", "hi")
+        comp_lang_code = SARVAM_LANGUAGES.get(detected_w_lang, "hi-IN")
+        return result["text"].strip(), comp_lang_code
     finally:
         _os.unlink(tmp_path)
 
 
-def _build_scheme_audio(schemes: list, message: str, state: str = None) -> bytes:
+def _build_scheme_audio(schemes: list, message: str, state: str = None, lang_code: str = None) -> bytes:
     """Convert scheme list to spoken audio in user's language."""
     parts = [message or SCHEME_INTRO_HI]
     for i, s in enumerate(schemes[:3], 1):  # speak top 3 only
@@ -130,7 +138,7 @@ def _build_scheme_audio(schemes: list, message: str, state: str = None) -> bytes
         "Dhanyavaad!"
     )
     full_text = " ... ".join(parts)
-    return _speak(full_text, state=state)
+    return _speak(full_text, state=state, lang_code=lang_code)
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
@@ -198,12 +206,13 @@ async def voice_answer(
     profile = session["profile"]
 
     # Step 2: Transcribe — pass language hint so Sarvam/Whisper don't misdetect
-    transcript = await _transcribe_upload(audio, state=profile.state, language=language)
-    logger.info(f"Transcribed: '{transcript}' (lang={language}, state={profile.state})")
+    transcript, detected_lang = await _transcribe_upload(audio, state=profile.state, language=session.get("detected_lang") or language)
+    session["detected_lang"] = detected_lang
+    logger.info(f"Transcribed: '{transcript}' (lang={detected_lang}, state={profile.state})")
 
     if not transcript or len(transcript.strip()) < 2:
         repeat_text = "Maafi kijiye, clearly nahi suna. Kripya dobara bolein."
-        audio_bytes = _speak(repeat_text, state=profile.state)
+        audio_bytes = _speak(repeat_text, state=profile.state, lang_code=detected_lang)
         return Response(
             content=audio_bytes,
             media_type="audio/mpeg",
@@ -238,6 +247,7 @@ async def voice_answer(
              for s in schemes],
             message,
             state=profile.state,
+            lang_code=detected_lang,
         )
 
         scheme_names = " | ".join(s.name for s in schemes[:3])
@@ -256,7 +266,7 @@ async def voice_answer(
 
     # Step 4b: Speak next question in user's language
     next_text = next_q.get("question_hi") or next_q["question_en"]
-    next_audio = _speak(next_text, state=profile.state)
+    next_audio = _speak(next_text, state=profile.state, lang_code=detected_lang)
 
     return Response(
         content=next_audio,
@@ -286,12 +296,12 @@ async def voice_chat_oneshot(
     from ai_service.utils.tts import text_to_speech
 
     # Step 1: Transcribe (Sarvam Saarika or Whisper)
-    transcript = await _transcribe_upload(audio, state=state)
+    transcript, detected_lang = await _transcribe_upload(audio, state=state, language=language)
 
     if not transcript.strip():
         audio_bytes = _speak(
             "Maafi kijiye, aapki awaz clearly nahi aayi. Phir se try karein.",
-            state=state
+            state=state, lang_code=detected_lang
         )
         return Response(content=audio_bytes, media_type="audio/mpeg",
                         headers={"X-Transcript": safe_header("(unclear)")})
@@ -337,7 +347,7 @@ async def voice_chat_oneshot(
         )
 
     # Step 3: TTS via Sarvam Bulbul (or gTTS fallback) in user's language
-    audio_bytes = _speak(spoken_text, state=state)
+    audio_bytes = _speak(spoken_text, state=state, lang_code=detected_lang)
 
     return Response(
         content=audio_bytes,

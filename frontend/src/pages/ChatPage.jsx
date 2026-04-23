@@ -386,15 +386,20 @@ export default function ChatPage() {
         }
     }
 
+    const handleFormSubmit = e => {
+        e.preventDefault()
+        if (input.trim()) {
+            if (recording) stopRecordingOnly()
+            sendMessage()
+        } else if (recording) {
+            stopRecordingAndSend()
+        }
+    }
+
     const handleKey = e => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()
-            if (input.trim()) {
-                if (recording) stopRecordingOnly()
-                sendMessage()
-            } else if (recording) {
-                stopRecordingAndSend()
-            }
+            handleFormSubmit(e)
         }
     }
 
@@ -542,9 +547,10 @@ export default function ChatPage() {
                 }}
             />
 
-            <div className="chat-input-bar glass-card">
+            <form className="chat-input-bar glass-card" onSubmit={handleFormSubmit}>
                 <div style={{ position: 'relative' }}>
                     <button
+                        type="button"
                         className="chat-mic-btn"
                         onClick={() => setShowAttachMenu(!showAttachMenu)}
                         title="Upload Document"
@@ -555,10 +561,10 @@ export default function ChatPage() {
                     </button>
                     {showAttachMenu && (
                         <div className="glass-card" style={{ position: 'absolute', bottom: 'calc(100% + 12px)', left: 0, padding: '8px', display: 'flex', flexDirection: 'column', gap: '8px', zIndex: 100, minWidth: '120px', borderRadius: '12px', border: '1px solid var(--border-glass)', background: 'var(--bg-glass)', backdropFilter: 'blur(10px)' }}>
-                            <button className="btn btn-ghost btn-sm" style={{ justifyContent: 'flex-start', width: '100%' }} onClick={() => { setShowAttachMenu(false); openCameraForDoc(); }}>
+                            <button type="button" className="btn btn-ghost btn-sm" style={{ justifyContent: 'flex-start', width: '100%' }} onClick={() => { setShowAttachMenu(false); openCameraForDoc(); }}>
                                 <Camera size={14} style={{ marginRight: '8px' }} /> Camera
                             </button>
-                            <button className="btn btn-ghost btn-sm" style={{ justifyContent: 'flex-start', width: '100%' }} onClick={() => { setShowAttachMenu(false); docFileRef.current?.click(); }}>
+                            <button type="button" className="btn btn-ghost btn-sm" style={{ justifyContent: 'flex-start', width: '100%' }} onClick={() => { setShowAttachMenu(false); docFileRef.current?.click(); }}>
                                 <Upload size={14} style={{ marginRight: '8px' }} /> Gallery
                             </button>
                         </div>
@@ -566,6 +572,7 @@ export default function ChatPage() {
                 </div>
 
                 <button
+                    type="button"
                     className={`chat-mic-btn ${recording ? 'recording' : voiceMode ? 'active' : ''}`}
                     onClick={handleMicClick}
                     title={recording ? 'Tap to stop & send' : voiceMode ? 'Tap to speak' : 'Start voice session'}
@@ -575,7 +582,7 @@ export default function ChatPage() {
                 </button>
 
                 {audioPlaying && (
-                    <button className="chat-mic-btn active" onClick={stopAudio} title="Stop audio">
+                    <button type="button" className="chat-mic-btn active" onClick={stopAudio} title="Stop audio">
                         <VolumeX size={18} />
                     </button>
                 )}
@@ -589,20 +596,13 @@ export default function ChatPage() {
                     rows={1}
                 />
                 <button
+                    type="submit"
                     className="chat-send-btn btn btn-primary btn-sm"
-                    onClick={() => {
-                        if (input.trim()) {
-                            if (recording) stopRecordingOnly()
-                            sendMessage()
-                        } else if (recording) {
-                            stopRecordingAndSend()
-                        }
-                    }}
                     disabled={loading || (!recording && !input.trim())}
                 >
                     <Send size={16} />
                 </button>
-            </div>
+            </form>
 
             <BottomNav />
         </div>

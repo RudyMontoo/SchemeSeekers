@@ -90,10 +90,10 @@ LANGUAGE_VOICES = {
 }
 
 
-def get_language_for_state(state: Optional[str]) -> Optional[str]:
-    """Get the best language code for a user's state. Returns None if unknown."""
-    if not state:
-        return None
+def get_language_for_state(state: Optional[str]) -> str:
+    """Get the best language code for a user's state. Returns 'hi' if unknown."""
+    if not state or state == "null":
+        return "hi"
     return STATE_TO_LANGUAGE.get(state, "hi")
 
 
@@ -316,13 +316,17 @@ def sarvam_translate(
 
 
 # ── Convenience function: speak agent question in user's language ─────────────
-def speak_for_state(text: str, state: Optional[str]) -> bytes:
+def speak_for_state(text: str, state: Optional[str] = None, force_lang_code: Optional[str] = None) -> bytes:
     """
-    Translate (if needed) and speak text in the appropriate language for the state.
+    Translate (if needed) and speak text in the appropriate language for the state or forced lang_code.
     Falls back to gTTS if Sarvam key not set.
     """
-    lang = get_language_for_state(state)
-    lang_code = get_sarvam_lang_code(lang)
+    if force_lang_code:
+        lang_code = force_lang_code
+        lang = lang_code.split("-")[0]
+    else:
+        lang = get_language_for_state(state)
+        lang_code = get_sarvam_lang_code(lang)
 
     if SARVAM_API_KEY:
         try:

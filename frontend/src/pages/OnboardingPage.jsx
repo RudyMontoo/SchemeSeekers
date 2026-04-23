@@ -111,7 +111,7 @@ export default function OnboardingPage() {
         // ── Fallback: also try Spring Boot if token exists ────────
         const token = localStorage.getItem('yojna_token')
         if (token) {
-            fetch('http://localhost:8080/api/profile', {
+            fetch('/api/profile', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(profile)

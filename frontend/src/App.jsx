@@ -10,6 +10,8 @@ import SchemeDetailPage from './pages/SchemeDetailPage'
 import ScannerPage from './pages/ScannerPage'
 import HelperFinderPage from './pages/HelperFinderPage'
 import HelperRegistrationPage from './pages/HelperRegistrationPage'
+import HelperLoginPage from './pages/HelperLoginPage'
+import HelperDashboardPage from './pages/HelperDashboardPage'
 import CSCFinderPage from './pages/CSCFinderPage'
 import ProfilePage from './pages/ProfilePage'
 import './index.css'
@@ -30,6 +32,8 @@ export default function App() {
         <Route path="/csc-finder" element={<CSCFinderPage />} />
         <Route path="/helpers" element={<HelperFinderPage />} />
         <Route path="/register-helper" element={<HelperRegistrationPage />} />
+        <Route path="/helper-login" element={<HelperLoginPage />} />
+        <Route path="/helper-dashboard" element={<HelperDashboardPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
