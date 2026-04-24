@@ -241,5 +241,5 @@ npm run dev
 
 <div align="center">
   <p><i>This project is built for social good. All data is sourced directly from verifiable Indian government public portals.</i></p>
-  <p><b>MSE-2 Evaluated Project</b></p>
+
 </div>
